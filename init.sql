@@ -108,13 +108,42 @@ SELECT
     END
 FROM generate_series(1, 300000) i;
 
--- IMPORTANT: NO INDEXES on foreign keys or commonly queried columns
--- This ensures queries will be VERY slow
--- Only primary key indexes exist (created automatically)
+-- Create indexes initially (like a properly configured database would have)
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+CREATE INDEX idx_reviews_user_id ON reviews(user_id);
+CREATE INDEX idx_reviews_product_id ON reviews(product_id);
+CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_orders_order_date ON orders(order_date);
 
--- Add some statistics to help PostgreSQL, but not indexes
+-- Add some statistics to help PostgreSQL
 ANALYZE users;
 ANALYZE products;
 ANALYZE orders;
 ANALYZE order_items;
 ANALYZE reviews;
+
+-- SIMULATE AN ACCIDENT: Someone ran a "maintenance script" that accidentally dropped critical indexes
+-- This might happen during a migration, maintenance window, or due to a faulty script
+-- Comment: "Temporary cleanup for maintenance - will recreate after migration"
+DROP INDEX IF EXISTS idx_orders_user_id;
+DROP INDEX IF EXISTS idx_order_items_order_id;
+DROP INDEX IF EXISTS idx_order_items_product_id;
+DROP INDEX IF EXISTS idx_reviews_user_id;
+
+-- This leaves the database in a broken state causing severe performance issues
+
+-- Log recent maintenance activity
+CREATE TABLE IF NOT EXISTS maintenance_log (
+    id SERIAL PRIMARY KEY,
+    action VARCHAR(200),
+    performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    performed_by VARCHAR(50)
+);
+
+INSERT INTO maintenance_log (action, performed_by, performed_at) VALUES 
+    ('Dropped indexes for table reorganization', 'admin', CURRENT_TIMESTAMP - INTERVAL '2 days'),
+    ('Started data migration process', 'admin', CURRENT_TIMESTAMP - INTERVAL '2 days'),
+    ('Migration completed', 'admin', CURRENT_TIMESTAMP - INTERVAL '1 day'),
+    ('TODO: Recreate indexes after verification', 'admin', CURRENT_TIMESTAMP - INTERVAL '1 day');

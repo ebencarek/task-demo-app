@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(az account:*)",
+      "Bash(az group show:*)",
+      "Bash(az postgres flexible-server show:*)",
+      "Bash(./deploy-container-apps.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(./deploy-simple.sh)",
+      "Bash(./deploy-postgresql.sh:*)",
+      "Bash(./deploy-postgres-single.sh:*)",
+      "Bash(az postgres flexible-server create:*)",
+      "Bash(az network private-dns zone create:*)",
+      "Bash(az network vnet create:*)",
+      "Bash(az network vnet subnet create:*)",
+      "Bash(az network private-dns link vnet create:*)",
+      "Bash(az postgres flexible-server db create:*)",
+      "Bash(az containerapp update:*)",
+      "Bash(curl:*)",
+      "Bash(az containerapp env create:*)",
+      "Bash(az containerapp env show:*)",
+      "Bash(az postgres flexible-server firewall-rule create:*)",
+      "Bash(SUBNET_ID=\"/subscriptions/474eaba6-0f3f-4b5a-bae5-a7858bd7c53b/resourceGroups/rg-demo-appcontainerapp0905/providers/Microsoft.Network/virtualNetworks/vnet-containerapp/subnets/subnet-containerapp\")",
+      "Bash(powershell:*)",
+      "Bash(az network vnet subnet show:*)",
+      "Bash(az postgres flexible-server list:*)",
+      "Bash(az containerapp env list:*)",
+      "Bash(az acr credential show:*)",
+      "Bash(az containerapp create:*)",
+      "Bash(az acr build:*)",
+      "Bash(az containerapp revision:*)",
+      "Bash(az containerapp logs show:*)",
+      "Bash(REACT_APP_API_URL=https://backend-api-vnet.jollybay-a0c6cabe.australiaeast.azurecontainerapps.io az acr build --registry acrcustomercontainerapp0905 --image customer-portal-frontend:latest .)",
+      "Bash(REACT_APP_API_URL=https://backend-api-vnet.jollybay-a0c6cabe.australiaeast.azurecontainerapps.io az acr build --registry acrcustomercontainerapp0905 --image customer-portal-frontend:v2 .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
