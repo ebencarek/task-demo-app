@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 
-const API_URL = 'https://backend-api-vnet.jollybay-a0c6cabe.australiaeast.azurecontainerapps.io';
+const API_URL = process.env.API_URL || 'http://localhost:3001';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -30,14 +30,14 @@ function App() {
     setLoading(true);
     setResult(null);
     setLastUpdateTime(new Date());
-    
+
     const startTime = Date.now();
-    
+
     try {
       const response = await fetch(`${API_URL}/api/customers`);
       const data = await response.json();
       const duration = Date.now() - startTime;
-      
+
       setResult({
         type: 'success',
         data,
@@ -58,7 +58,7 @@ function App() {
   const refreshDashboard = async () => {
     setLoading(true);
     setLastUpdateTime(new Date());
-    
+
     try {
       const response = await fetch(`${API_URL}/health`);
       const data = await response.json();
@@ -71,14 +71,14 @@ function App() {
   };
 
   const getPerformanceBadge = (duration) => {
-    if (duration < 1000) return 'performance-fast';
-    if (duration < 5000) return 'performance-medium';
+    if (duration < 50) return 'performance-fast';
+    if (duration < 100) return 'performance-medium';
     return 'performance-slow';
   };
 
   const getPerformanceText = (duration) => {
-    if (duration < 1000) return 'FAST';
-    if (duration < 5000) return 'MEDIUM';
+    if (duration < 50) return 'FAST';
+    if (duration < 100) return 'MEDIUM';
     return 'SLOW';
   };
 
@@ -93,16 +93,16 @@ function App() {
 
         {/* Controls */}
         <div className="controls">
-          <button 
-            className="button primary" 
-            onClick={loadCustomerData} 
+          <button
+            className="button primary"
+            onClick={loadCustomerData}
             disabled={loading}
           >
             📊 Analyze Customer Data
           </button>
-          <button 
-            className="button secondary" 
-            onClick={refreshDashboard} 
+          <button
+            className="button secondary"
+            onClick={refreshDashboard}
             disabled={loading}
           >
             🔄 Refresh Dashboard
@@ -128,7 +128,7 @@ function App() {
                 <div className="metrics-grid">
                   <div className="metric">
                     <div className="metric-value">
-                      <span 
+                      <span
                         className={`status-indicator ${
                           healthStatus.status === 'healthy' ? 'status-healthy' : 'status-unhealthy'
                         }`}
@@ -139,8 +139,8 @@ function App() {
                   </div>
                   <div className="metric">
                     <div className="metric-value">
-                      {healthStatus.timestamp ? 
-                        new Date(healthStatus.timestamp).toLocaleTimeString() : 
+                      {healthStatus.timestamp ?
+                        new Date(healthStatus.timestamp).toLocaleTimeString() :
                         'N/A'
                       }
                     </div>
@@ -187,10 +187,10 @@ function App() {
                   <div className="metric-label">Last Updated</div>
                 </div>
               </div>
-              
+
               {result.duration > 5000 && (
                 <div className="warning">
-                  ⚠️ <strong>Performance Alert:</strong> Query took {(result.duration/1000).toFixed(1)}s. 
+                  ⚠️ <strong>Performance Alert:</strong> Query took {(result.duration/1000).toFixed(1)}s.
                   Database optimization needed.
                 </div>
               )}

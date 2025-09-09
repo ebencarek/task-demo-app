@@ -89,7 +89,7 @@ The React app will automatically proxy API requests to the backend on port 3001.
 
 ### Database Queries
 The app includes an intentionally slow query to demonstrate performance issues:
-- Click "📊 Analyze Customer Data" 
+- Click "📊 Analyze Customer Data"
 - Query will take 10-30+ seconds due to missing indexes
 - This simulates real-world performance problems
 
@@ -109,7 +109,7 @@ psql -U postgres -h localhost -d customerdb -c "SELECT version();"
 cd backend && npm start
 ```
 
-### Frontend Issues  
+### Frontend Issues
 ```bash
 # Clear npm cache
 npm cache clean --force
@@ -150,7 +150,7 @@ cd backend
 docker build -t customer-backend .
 docker run -p 3001:3001 -e DB_HOST=host.docker.internal customer-backend
 
-# Frontend  
+# Frontend
 cd frontend
 docker build -t customer-frontend .
 docker run -p 3000:80 -e REACT_APP_API_URL=http://localhost:3001 customer-frontend
@@ -172,7 +172,7 @@ services:
       - "5432:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-  
+
   backend:
     build: ./backend
     ports:
@@ -184,7 +184,7 @@ services:
       DB_NAME: customerdb
     depends_on:
       - postgres
-  
+
   frontend:
     build: ./frontend
     ports:
@@ -201,7 +201,7 @@ Run with: `docker-compose up`
 
 1. **Frontend Dashboard**: Modern purple gradient dashboard at http://localhost:3000
 2. **System Health Card**: Shows API status (should be green/ONLINE)
-3. **Interactive Buttons**: 
+3. **Interactive Buttons**:
    - "📊 Analyze Customer Data" - Triggers slow query
    - "🔄 Refresh Dashboard" - Updates health status
 4. **Performance Metrics**: Shows query timing and performance badges

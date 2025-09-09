@@ -28,90 +28,25 @@ app.get('/api/customers', async (req, res) => {
   console.log(`[${new Date().toISOString()}] Customer analytics request received...`);
 
   try {
-    // EXTREMELY EXPENSIVE QUERY - Guaranteed to be slow (10-60+ seconds)
-    // This query is intentionally inefficient:
-    // - Multiple nested subqueries
-    // - Self-joins on large tables
-    // - Complex aggregations without indexes
-    // - CROSS JOIN in subquery creates cartesian products
+    // Test query designed to be very sensitive to missing indexes
     const result = await pool.query(`
-      WITH customer_metrics AS (
-        SELECT
-          u.id,
-          u.name,
-          u.email,
-          COUNT(DISTINCT o.id) as total_orders,
-          SUM(oi.quantity * p.price * (1 - COALESCE(oi.discount, 0) / 100)) as lifetime_value,
-          AVG(oi.quantity * p.price) as avg_order_value,
-          COUNT(DISTINCT p.category) as categories_shopped,
-          MAX(o.order_date) as last_purchase,
-          MIN(o.order_date) as first_purchase,
-          STRING_AGG(DISTINCT p.category, ', ' ORDER BY p.category) as all_categories
-        FROM users u
-        LEFT JOIN orders o ON u.id = o.user_id
-        LEFT JOIN order_items oi ON o.id = oi.order_id
-        LEFT JOIN products p ON oi.product_id = p.id
-        WHERE u.created_at > '2020-01-01'
-        GROUP BY u.id, u.name, u.email
-      ),
-      review_metrics AS (
-        SELECT
-          r.user_id,
-          COUNT(*) as review_count,
-          AVG(r.rating) as avg_rating,
-          COUNT(DISTINCT r.product_id) as products_reviewed
-        FROM reviews r
-        GROUP BY r.user_id
-      ),
-      purchase_frequency AS (
-        SELECT
-          o2.user_id,
-          AVG(EXTRACT(days FROM (o2.order_date - o1.order_date))) as avg_days_between_orders,
-          COUNT(DISTINCT DATE_TRUNC('month', o2.order_date)) as active_months
-        FROM orders o1
-        CROSS JOIN orders o2
-        WHERE o1.user_id = o2.user_id
-          AND o1.order_date < o2.order_date
-          AND o1.id != o2.id
-        GROUP BY o2.user_id
-      ),
-      category_spending AS (
-        SELECT
-          o.user_id,
-          p.category,
-          SUM(oi.quantity * p.price) as category_total
-        FROM orders o
-        JOIN order_items oi ON o.id = oi.order_id
-        JOIN products p ON oi.product_id = p.id
-        GROUP BY o.user_id, p.category
-      ),
-      ranked_categories AS (
-        SELECT
-          user_id,
-          category,
-          category_total,
-          RANK() OVER (PARTITION BY user_id ORDER BY category_total DESC) as category_rank
-        FROM category_spending
-      )
-      SELECT
-        cm.*,
-        rm.review_count,
-        rm.avg_rating,
-        rm.products_reviewed,
-        pf.avg_days_between_orders,
-        pf.active_months,
-        rc1.category as top_category,
-        rc1.category_total as top_category_spend,
-        rc2.category as second_category,
-        rc2.category_total as second_category_spend
-      FROM customer_metrics cm
-      LEFT JOIN review_metrics rm ON cm.id = rm.user_id
-      LEFT JOIN purchase_frequency pf ON cm.id = pf.user_id
-      LEFT JOIN ranked_categories rc1 ON cm.id = rc1.user_id AND rc1.category_rank = 1
-      LEFT JOIN ranked_categories rc2 ON cm.id = rc2.user_id AND rc2.category_rank = 2
-      WHERE cm.total_orders > 0
-      ORDER BY cm.lifetime_value DESC NULLS LAST, cm.total_orders DESC
-      LIMIT 20
+      SELECT 
+        o.id,
+        u.name,
+        u.email,
+        o.order_date,
+        oi.quantity,
+        p.name as product_name,
+        p.price
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE o.order_date BETWEEN '2023-01-01' AND '2023-12-31'
+        AND u.email LIKE '%example.com'
+        AND p.category IN ('Electronics', 'Clothing', 'Books')
+      ORDER BY o.order_date DESC, p.price DESC
+      LIMIT 50
     `);
 
     const duration = Date.now() - startTime;
@@ -194,6 +129,15 @@ app.post('/api/init-db', async (req, res) => {
         review_text TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Create indexes for query performance
+      CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
+      CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date);
+      CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+      CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
+      CREATE INDEX IF NOT EXISTS idx_reviews_user_id ON reviews(user_id);
+      CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
     `);
 
     console.log('Inserting test data - this may take several minutes...');
