@@ -1,34 +1,53 @@
 #!/bin/bash
 
 # Azure Container Apps deployment script
-SUFFIX="containerapp$(date +%m%d)"
+# Usage: ./deploy-container-apps.sh [custom-suffix]
+
+CUSTOM_SUFFIX="${1}"
+if [ -n "$CUSTOM_SUFFIX" ]; then
+    # Strip hyphens from custom suffix
+    SUFFIX="${CUSTOM_SUFFIX//[-]/}"
+else
+    SUFFIX="containerapp$(date +%m%d)"
+fi
 
 # Resource names with suffix
-RESOURCE_GROUP="rg-demo-app${SUFFIX}"
+RESOURCE_GROUP="rg-demo-app-${SUFFIX}"
 ACR_NAME="acrcustomer${SUFFIX}"
-POSTGRES_SERVER="psql-demo${SUFFIX}"
+POSTGRES_SERVER="psql-demo-${SUFFIX}"
 LOCATION="australiaeast"
 DB_NAME="customerdb"
 DB_USER="demoadmin"
 DB_PASSWORD="DemoPassword123!"
-ENVIRONMENT_NAME="env-demo-app${SUFFIX}"
+ENVIRONMENT_NAME="env-demo-app-${SUFFIX}"
 
 echo "🚀 Deploying Customer Portal to Azure Container Apps..."
 echo "   Frontend: React + Nginx"
 echo "   Backend: Node.js Express API"
 echo "   Database: Azure PostgreSQL Flexible Server"
+echo "   Using suffix: $SUFFIX"
 
-# Create resource group
-echo "📦 Creating resource group..."
-az group create --name $RESOURCE_GROUP --location $LOCATION
+# Check if resource group exists, create if not
+echo "📦 Checking resource group..."
+if ! az group show --name $RESOURCE_GROUP &>/dev/null; then
+    echo "Creating resource group $RESOURCE_GROUP..."
+    az group create --name $RESOURCE_GROUP --location $LOCATION
+else
+    echo "✅ Resource group $RESOURCE_GROUP already exists"
+fi
 
-# Create Azure Container Registry
-echo "🐳 Creating Azure Container Registry..."
-az acr create \
-  --resource-group $RESOURCE_GROUP \
-  --name $ACR_NAME \
-  --sku Basic \
-  --admin-enabled true
+# Check if Container Registry exists, create if not
+echo "🐳 Checking Azure Container Registry..."
+if ! az acr show --resource-group $RESOURCE_GROUP --name $ACR_NAME &>/dev/null; then
+    echo "Creating Azure Container Registry $ACR_NAME..."
+    az acr create \
+      --resource-group $RESOURCE_GROUP \
+      --name $ACR_NAME \
+      --sku Basic \
+      --admin-enabled true
+else
+    echo "✅ Container Registry $ACR_NAME already exists"
+fi
 
 # Get ACR login server and credentials
 ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query loginServer --output tsv)
@@ -37,37 +56,47 @@ ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query passwords[0].valu
 
 echo "✅ ACR Login Server: $ACR_LOGIN_SERVER"
 
-# Create Azure PostgreSQL Flexible Server in VNet
-echo "🐘 Creating Azure Database for PostgreSQL Flexible Server in VNet..."
-az postgres flexible-server create \
-  --resource-group $RESOURCE_GROUP \
-  --name $POSTGRES_SERVER \
-  --location $LOCATION \
-  --admin-user $DB_USER \
-  --admin-password $DB_PASSWORD \
-  --sku-name Standard_B1ms \
-  --tier Burstable \
-  --storage-size 32 \
-  --version 15 \
-  --subnet subnet-postgres \
-  --vnet vnet-containerapp \
-  --private-dns-zone privatelink.postgres.database.azure.com \
-  --yes
+# Check if PostgreSQL server exists, create if not
+echo "🐘 Checking Azure Database for PostgreSQL Flexible Server..."
+if ! az postgres flexible-server show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER &>/dev/null; then
+    echo "Creating Azure Database for PostgreSQL Flexible Server with public access..."
+    az postgres flexible-server create \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
+      --location $LOCATION \
+      --admin-user $DB_USER \
+      --admin-password $DB_PASSWORD \
+      --sku-name Standard_B1ms \
+      --tier Burstable \
+      --storage-size 32 \
+      --version 15 \
+      --subnet subnet-postgres \
+      --vnet vnet-containerapp \
+      --public-access 0.0.0.0-255.255.255.255 \
+      --yes
 
-# Wait for server to be ready
-echo "⏳ Waiting for PostgreSQL server to be ready..."
-az postgres flexible-server show \
-  --resource-group $RESOURCE_GROUP \
-  --name $POSTGRES_SERVER \
-  --query state \
-  --output tsv
+    # Wait for server to be ready
+    echo "⏳ Waiting for PostgreSQL server to be ready..."
+    az postgres flexible-server show \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
+      --query state \
+      --output tsv
+else
+    echo "✅ PostgreSQL server $POSTGRES_SERVER already exists"
+fi
 
-# Create database
-echo "📝 Creating database..."
-az postgres flexible-server db create \
-  --resource-group $RESOURCE_GROUP \
-  --server-name $POSTGRES_SERVER \
-  --database-name $DB_NAME
+# Check if database exists, create if not
+echo "📝 Checking database..."
+if ! az postgres flexible-server db show --resource-group $RESOURCE_GROUP --server-name $POSTGRES_SERVER --database-name $DB_NAME &>/dev/null; then
+    echo "Creating database $DB_NAME..."
+    az postgres flexible-server db create \
+      --resource-group $RESOURCE_GROUP \
+      --server-name $POSTGRES_SERVER \
+      --database-name $DB_NAME
+else
+    echo "✅ Database $DB_NAME already exists"
+fi
 
 # Get PostgreSQL server hostname
 POSTGRES_HOST=$(az postgres flexible-server show \
@@ -77,6 +106,20 @@ POSTGRES_HOST=$(az postgres flexible-server show \
   --output tsv)
 
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
+
+# Check if firewall rule for Azure services exists, create if not
+echo "🔐 Checking firewall rule for Azure services..."
+if ! az postgres flexible-server firewall-rule show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER --rule-name AllowAzureServices &>/dev/null; then
+    echo "Creating firewall rule for Azure services..."
+    az postgres flexible-server firewall-rule create \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
+      --rule-name AllowAzureServices \
+      --start-ip-address 0.0.0.0 \
+      --end-ip-address 0.0.0.0
+else
+    echo "✅ Firewall rule AllowAzureServices already exists"
+fi
 
 # Initialize database with test data using migrations
 if command -v psql &> /dev/null && [ -d "migrations" ]; then
@@ -92,54 +135,55 @@ cd backend
 az acr build --registry $ACR_NAME --image customer-portal-backend:latest .
 cd ..
 
-# Build and push frontend image  
+# Build and push frontend image
 echo "🔨 Building and pushing frontend image to ACR..."
 cd frontend
 az acr build --registry $ACR_NAME --image customer-portal-frontend:latest .
 cd ..
 
 # Create VNet and subnets first
-echo "🌐 Creating Virtual Network infrastructure..."
+echo "🌐 Checking Virtual Network infrastructure..."
 
-# Create VNet
-az network vnet create \
-  --resource-group $RESOURCE_GROUP \
-  --name vnet-containerapp \
-  --location $LOCATION \
-  --address-prefix 10.0.0.0/16 \
-  --output none
+# Check if VNet exists, create if not
+if ! az network vnet show --resource-group $RESOURCE_GROUP --name vnet-containerapp &>/dev/null; then
+    echo "Creating Virtual Network..."
+    az network vnet create \
+      --resource-group $RESOURCE_GROUP \
+      --name vnet-containerapp \
+      --location $LOCATION \
+      --address-prefix 10.0.0.0/16 \
+      --output none
+else
+    echo "✅ Virtual Network vnet-containerapp already exists"
+fi
 
-# Create subnet for PostgreSQL with delegation
-az network vnet subnet create \
-  --resource-group $RESOURCE_GROUP \
-  --vnet-name vnet-containerapp \
-  --name subnet-postgres \
-  --address-prefix 10.0.1.0/24 \
-  --delegations Microsoft.DBforPostgreSQL/flexibleServers \
-  --output none
+# Check if PostgreSQL subnet exists, create if not
+if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vnet-containerapp --name subnet-postgres &>/dev/null; then
+    echo "Creating subnet for PostgreSQL..."
+    az network vnet subnet create \
+      --resource-group $RESOURCE_GROUP \
+      --vnet-name vnet-containerapp \
+      --name subnet-postgres \
+      --address-prefix 10.0.1.0/24 \
+      --delegations Microsoft.DBforPostgreSQL/flexibleServers \
+      --output none
+else
+    echo "✅ PostgreSQL subnet already exists"
+fi
 
-# Create subnet for Container Apps (requires /23 or larger)
-az network vnet subnet create \
-  --resource-group $RESOURCE_GROUP \
-  --vnet-name vnet-containerapp \
-  --name subnet-containerapp \
-  --address-prefix 10.0.2.0/23 \
-  --output none
+# Check if Container Apps subnet exists, create if not
+if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vnet-containerapp --name subnet-containerapp &>/dev/null; then
+    echo "Creating subnet for Container Apps..."
+    az network vnet subnet create \
+      --resource-group $RESOURCE_GROUP \
+      --vnet-name vnet-containerapp \
+      --name subnet-containerapp \
+      --address-prefix 10.0.2.0/23 \
+      --output none
+else
+    echo "✅ Container Apps subnet already exists"
+fi
 
-# Create private DNS zone for PostgreSQL
-az network private-dns zone create \
-  --resource-group $RESOURCE_GROUP \
-  --name privatelink.postgres.database.azure.com \
-  --output none
-
-# Link DNS zone to VNet
-az network private-dns link vnet create \
-  --resource-group $RESOURCE_GROUP \
-  --zone-name privatelink.postgres.database.azure.com \
-  --name vnet-link \
-  --virtual-network vnet-containerapp \
-  --registration-enabled false \
-  --output none
 
 # Get subnet ID for Container Apps
 SUBNET_ID=$(az network vnet subnet show \
@@ -149,13 +193,18 @@ SUBNET_ID=$(az network vnet subnet show \
   --query id \
   --output tsv)
 
-# Create VNet-integrated Container App Environment
-echo "🌐 Creating VNet-integrated Container App Environment..."
-az containerapp env create \
-  --name $ENVIRONMENT_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --location $LOCATION \
-  --infrastructure-subnet-resource-id "$SUBNET_ID"
+# Check if Container App Environment exists, create if not
+echo "🌐 Checking VNet-integrated Container App Environment..."
+if ! az containerapp env show --resource-group $RESOURCE_GROUP --name $ENVIRONMENT_NAME &>/dev/null; then
+    echo "Creating VNet-integrated Container App Environment..."
+    az containerapp env create \
+      --name $ENVIRONMENT_NAME \
+      --resource-group $RESOURCE_GROUP \
+      --location $LOCATION \
+      --infrastructure-subnet-resource-id "$SUBNET_ID"
+else
+    echo "✅ Container App Environment $ENVIRONMENT_NAME already exists"
+fi
 
 # Get environment ID
 ENVIRONMENT_ID=$(az containerapp env show \
@@ -164,22 +213,27 @@ ENVIRONMENT_ID=$(az containerapp env show \
   --query id \
   --output tsv)
 
-# Create backend container app
-echo "🔧 Creating backend Container App..."
-az containerapp create \
-  --name backend-api \
-  --resource-group $RESOURCE_GROUP \
-  --environment $ENVIRONMENT_NAME \
-  --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
-  --target-port 3001 \
-  --ingress external \
-  --registry-server $ACR_LOGIN_SERVER \
-  --registry-username $ACR_USERNAME \
-  --registry-password $ACR_PASSWORD \
-  --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME \
-  --env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432 \
-  --cpu 0.25 --memory 0.5Gi \
-  --min-replicas 1 --max-replicas 5
+# Check if backend container app exists, create if not
+echo "🔧 Checking backend Container App..."
+if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>/dev/null; then
+    echo "Creating backend Container App..."
+    az containerapp create \
+      --name backend-api \
+      --resource-group $RESOURCE_GROUP \
+      --environment $ENVIRONMENT_NAME \
+      --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
+      --target-port 3001 \
+      --ingress external \
+      --registry-server $ACR_LOGIN_SERVER \
+      --registry-username $ACR_USERNAME \
+      --registry-password $ACR_PASSWORD \
+      --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME \
+      --env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432 \
+      --cpu 0.25 --memory 0.5Gi \
+      --min-replicas 1 --max-replicas 5
+else
+    echo "✅ Backend Container App backend-api already exists"
+fi
 
 # Get backend URL
 BACKEND_URL=$(az containerapp show \
@@ -190,21 +244,26 @@ BACKEND_URL=$(az containerapp show \
 
 echo "✅ Backend API URL: https://$BACKEND_URL"
 
-# Create frontend container app
-echo "🔧 Creating frontend Container App..."
-az containerapp create \
-  --name frontend-web \
-  --resource-group $RESOURCE_GROUP \
-  --environment $ENVIRONMENT_NAME \
-  --image $ACR_LOGIN_SERVER/customer-portal-frontend:latest \
-  --target-port 80 \
-  --ingress external \
-  --registry-server $ACR_LOGIN_SERVER \
-  --registry-username $ACR_USERNAME \
-  --registry-password $ACR_PASSWORD \
-  --env-vars REACT_APP_API_URL=https://$BACKEND_URL \
-  --cpu 0.25 --memory 0.5Gi \
-  --min-replicas 1 --max-replicas 3
+# Check if frontend container app exists, create if not
+echo "🔧 Checking frontend Container App..."
+if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &>/dev/null; then
+    echo "Creating frontend Container App..."
+    az containerapp create \
+      --name frontend-web \
+      --resource-group $RESOURCE_GROUP \
+      --environment $ENVIRONMENT_NAME \
+      --image $ACR_LOGIN_SERVER/customer-portal-frontend:latest \
+      --target-port 80 \
+      --ingress external \
+      --registry-server $ACR_LOGIN_SERVER \
+      --registry-username $ACR_USERNAME \
+      --registry-password $ACR_PASSWORD \
+      --env-vars REACT_APP_API_URL=https://$BACKEND_URL \
+      --cpu 0.25 --memory 0.5Gi \
+      --min-replicas 1 --max-replicas 3
+else
+    echo "✅ Frontend Container App frontend-web already exists"
+fi
 
 # Get frontend URL
 FRONTEND_URL=$(az containerapp show \

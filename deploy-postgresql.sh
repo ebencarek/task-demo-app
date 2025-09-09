@@ -1,7 +1,15 @@
 #!/bin/bash
 
 # Deploy PostgreSQL Flexible Server for Container Apps
-SUFFIX="containerapp$(date +%m%d)"
+# Usage: ./deploy-postgresql.sh [custom-suffix]
+
+CUSTOM_SUFFIX="${1}"
+if [ -n "$CUSTOM_SUFFIX" ]; then
+    SUFFIX="$CUSTOM_SUFFIX"
+else
+    SUFFIX="containerapp$(date +%m%d)"
+fi
+
 RESOURCE_GROUP="rg-demo-app${SUFFIX}"
 POSTGRES_SERVER="psql-demo${SUFFIX}"
 LOCATION="australiaeast"
@@ -12,12 +20,24 @@ DB_PASSWORD="DemoPassword123!"
 echo "🐘 Deploying PostgreSQL Flexible Server..."
 echo "   Resource Group: $RESOURCE_GROUP"
 echo "   Server Name: $POSTGRES_SERVER"
+echo "   Using suffix: $SUFFIX"
 
-# Create PostgreSQL Flexible Server with public access
-echo "📝 Creating PostgreSQL Flexible Server with public access..."
-az postgres flexible-server create \
-  --resource-group $RESOURCE_GROUP \
-  --name $POSTGRES_SERVER \
+# Check if resource group exists, create if not
+echo "📝 Checking resource group..."
+if ! az group show --name $RESOURCE_GROUP &>/dev/null; then
+    echo "Creating resource group $RESOURCE_GROUP..."
+    az group create --name $RESOURCE_GROUP --location $LOCATION
+else
+    echo "✅ Resource group $RESOURCE_GROUP already exists"
+fi
+
+# Check if PostgreSQL server exists, create if not
+echo "📝 Checking PostgreSQL Flexible Server..."
+if ! az postgres flexible-server show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER &>/dev/null; then
+    echo "Creating PostgreSQL Flexible Server with public access..."
+    az postgres flexible-server create \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
   --location $LOCATION \
   --admin-user $DB_USER \
   --admin-password "$DB_PASSWORD" \
@@ -25,22 +45,30 @@ az postgres flexible-server create \
   --tier Burstable \
   --storage-size 32 \
   --version 15 \
-  --public-access 0.0.0.0-255.255.255.255
+      --public-access 0.0.0.0-255.255.255.255
+    
+    # Wait for server to be ready
+    echo "⏳ Waiting for PostgreSQL server to be ready..."
+    az postgres flexible-server show \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
+      --query state \
+      --output tsv
+else
+    echo "✅ PostgreSQL server $POSTGRES_SERVER already exists"
+fi
 
-# Wait for server to be ready
-echo "⏳ Waiting for PostgreSQL server to be ready..."
-az postgres flexible-server show \
-  --resource-group $RESOURCE_GROUP \
-  --name $POSTGRES_SERVER \
-  --query state \
-  --output tsv
-
-# Create database
-echo "📝 Creating database..."
-az postgres flexible-server db create \
-  --resource-group $RESOURCE_GROUP \
-  --server-name $POSTGRES_SERVER \
-  --database-name $DB_NAME
+# Check if database exists, create if not
+echo "📝 Checking database..."
+if ! az postgres flexible-server db show --resource-group $RESOURCE_GROUP --server-name $POSTGRES_SERVER --database-name $DB_NAME &>/dev/null; then
+    echo "Creating database $DB_NAME..."
+    az postgres flexible-server db create \
+      --resource-group $RESOURCE_GROUP \
+      --server-name $POSTGRES_SERVER \
+      --database-name $DB_NAME
+else
+    echo "✅ Database $DB_NAME already exists"
+fi
 
 # Get PostgreSQL server hostname
 POSTGRES_HOST=$(az postgres flexible-server show \
@@ -51,14 +79,19 @@ POSTGRES_HOST=$(az postgres flexible-server show \
 
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
 
-# Create firewall rule for Azure services
-echo "🔐 Configuring firewall for Azure services..."
-az postgres flexible-server firewall-rule create \
-  --resource-group $RESOURCE_GROUP \
-  --name $POSTGRES_SERVER \
-  --rule-name AllowAzureServices \
-  --start-ip-address 0.0.0.0 \
-  --end-ip-address 0.0.0.0
+# Check if firewall rule exists, create if not
+echo "🔐 Checking firewall rule for Azure services..."
+if ! az postgres flexible-server firewall-rule show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER --rule-name AllowAzureServices &>/dev/null; then
+    echo "Creating firewall rule for Azure services..."
+    az postgres flexible-server firewall-rule create \
+      --resource-group $RESOURCE_GROUP \
+      --name $POSTGRES_SERVER \
+      --rule-name AllowAzureServices \
+      --start-ip-address 0.0.0.0 \
+      --end-ip-address 0.0.0.0
+else
+    echo "✅ Firewall rule AllowAzureServices already exists"
+fi
 
 # Try to initialize database with sample data using psql client
 echo "💾 Attempting to initialize database with sample data..."

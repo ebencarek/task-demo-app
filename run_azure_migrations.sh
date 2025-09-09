@@ -30,11 +30,15 @@ run_migration() {
     
     if ls $migration_file 1> /dev/null 2>&1; then
         echo "📝 Applying migration $migration_num: $(basename $migration_file)..."
-        PGPASSWORD=$DB_PASSWORD psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -f $migration_file
-        if [ $? -eq 0 ]; then
+        local output
+        output=$(PGPASSWORD=$DB_PASSWORD psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -f $migration_file 2>&1)
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo "✅ Migration $migration_num completed successfully"
         else
-            echo "❌ Migration $migration_num failed"
+            echo "❌ Migration $migration_num failed with exit code $exit_code"
+            echo "Error output:"
+            echo "$output"
             return 1
         fi
     else
