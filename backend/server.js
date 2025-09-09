@@ -36,7 +36,7 @@ app.get('/api/customers', async (req, res) => {
     // - CROSS JOIN in subquery creates cartesian products
     const result = await pool.query(`
       WITH customer_metrics AS (
-        SELECT 
+        SELECT
           u.id,
           u.name,
           u.email,
@@ -55,7 +55,7 @@ app.get('/api/customers', async (req, res) => {
         GROUP BY u.id, u.name, u.email
       ),
       review_metrics AS (
-        SELECT 
+        SELECT
           r.user_id,
           COUNT(*) as review_count,
           AVG(r.rating) as avg_rating,
@@ -64,19 +64,19 @@ app.get('/api/customers', async (req, res) => {
         GROUP BY r.user_id
       ),
       purchase_frequency AS (
-        SELECT 
+        SELECT
           o2.user_id,
           AVG(EXTRACT(days FROM (o2.order_date - o1.order_date))) as avg_days_between_orders,
           COUNT(DISTINCT DATE_TRUNC('month', o2.order_date)) as active_months
         FROM orders o1
         CROSS JOIN orders o2
-        WHERE o1.user_id = o2.user_id 
+        WHERE o1.user_id = o2.user_id
           AND o1.order_date < o2.order_date
           AND o1.id != o2.id
         GROUP BY o2.user_id
       ),
       category_spending AS (
-        SELECT 
+        SELECT
           o.user_id,
           p.category,
           SUM(oi.quantity * p.price) as category_total
@@ -86,17 +86,14 @@ app.get('/api/customers', async (req, res) => {
         GROUP BY o.user_id, p.category
       ),
       ranked_categories AS (
-        SELECT 
+        SELECT
           user_id,
           category,
           category_total,
           RANK() OVER (PARTITION BY user_id ORDER BY category_total DESC) as category_rank
         FROM category_spending
-      ),
-      slow_query AS (
-        SELECT pg_sleep(2)
       )
-      SELECT 
+      SELECT
         cm.*,
         rm.review_count,
         rm.avg_rating,
@@ -107,7 +104,7 @@ app.get('/api/customers', async (req, res) => {
         rc1.category_total as top_category_spend,
         rc2.category as second_category,
         rc2.category_total as second_category_spend
-      FROM slow_query, customer_metrics cm
+      FROM customer_metrics cm
       LEFT JOIN review_metrics rm ON cm.id = rm.user_id
       LEFT JOIN purchase_frequency pf ON cm.id = pf.user_id
       LEFT JOIN ranked_categories rc1 ON cm.id = rc1.user_id AND rc1.category_rank = 1
@@ -129,7 +126,7 @@ app.get('/api/customers', async (req, res) => {
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`[${new Date().toISOString()}] Database error after ${duration}ms:`, error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Database query failed - likely due to timeout or excessive resource usage',
       message: error.message,
       query_time: `${duration}ms`
@@ -143,20 +140,20 @@ app.post('/api/init-db', async (req, res) => {
   try {
     // Check if tables already exist
     const tableCheck = await pool.query(`
-      SELECT COUNT(*) FROM information_schema.tables 
+      SELECT COUNT(*) FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name IN ('users', 'products', 'orders', 'order_items', 'reviews')
     `);
-    
+
     if (parseInt(tableCheck.rows[0].count) === 5) {
-      return res.json({ 
-        message: 'Database already initialized', 
+      return res.json({
+        message: 'Database already initialized',
         tables: 5,
         status: 'already_exists'
       });
     }
 
     console.log('Creating database tables...');
-    
+
     // Create tables
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -165,7 +162,7 @@ app.post('/api/init-db', async (req, res) => {
         email VARCHAR(100),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-      
+
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
         name VARCHAR(200),
@@ -173,14 +170,14 @@ app.post('/api/init-db', async (req, res) => {
         category VARCHAR(50),
         description TEXT
       );
-      
+
       CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id),
         order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         status VARCHAR(20)
       );
-      
+
       CREATE TABLE IF NOT EXISTS order_items (
         id SERIAL PRIMARY KEY,
         order_id INTEGER REFERENCES orders(id),
@@ -188,7 +185,7 @@ app.post('/api/init-db', async (req, res) => {
         quantity INTEGER,
         discount DECIMAL(5,2)
       );
-      
+
       CREATE TABLE IF NOT EXISTS reviews (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id),
@@ -200,22 +197,22 @@ app.post('/api/init-db', async (req, res) => {
     `);
 
     console.log('Inserting test data - this may take several minutes...');
-    
+
     // Insert sample data (smaller dataset for faster initialization)
     await pool.query(`
-      INSERT INTO users (name, email) 
-      SELECT 
+      INSERT INTO users (name, email)
+      SELECT
         'Customer ' || i,
         'customer' || i || '@example.com'
       FROM generate_series(1, 1000) i;
     `);
-    
+
     await pool.query(`
       INSERT INTO products (name, price, category, description)
-      SELECT 
+      SELECT
         'Product ' || i,
         (random() * 500 + 10)::DECIMAL(10,2),
-        CASE (i % 10) 
+        CASE (i % 10)
           WHEN 0 THEN 'Electronics'
           WHEN 1 THEN 'Clothing'
           WHEN 2 THEN 'Home'
@@ -230,10 +227,10 @@ app.post('/api/init-db', async (req, res) => {
         'Description for product ' || i
       FROM generate_series(1, 1000) i;
     `);
-    
+
     await pool.query(`
       INSERT INTO orders (user_id, order_date, status)
-      SELECT 
+      SELECT
         (random() * 999 + 1)::INTEGER,
         CURRENT_TIMESTAMP - (random() * interval '365 days'),
         CASE (random() * 3)::INTEGER
@@ -244,20 +241,20 @@ app.post('/api/init-db', async (req, res) => {
         END
       FROM generate_series(1, 5000) i;
     `);
-    
+
     await pool.query(`
       INSERT INTO order_items (order_id, product_id, quantity, discount)
-      SELECT 
+      SELECT
         (random() * 4999 + 1)::INTEGER,
         (random() * 999 + 1)::INTEGER,
         (random() * 10 + 1)::INTEGER,
         (random() * 20)::DECIMAL(5,2)
       FROM generate_series(1, 10000) i;
     `);
-    
+
     await pool.query(`
       INSERT INTO reviews (user_id, product_id, rating, review_text)
-      SELECT 
+      SELECT
         (random() * 999 + 1)::INTEGER,
         (random() * 999 + 1)::INTEGER,
         (random() * 5 + 1)::INTEGER,
@@ -266,8 +263,8 @@ app.post('/api/init-db', async (req, res) => {
     `);
 
     console.log('Database initialization completed successfully!');
-    
-    res.json({ 
+
+    res.json({
       message: 'Database initialized successfully',
       tables_created: 5,
       sample_data: {
@@ -279,10 +276,10 @@ app.post('/api/init-db', async (req, res) => {
       },
       status: 'success'
     });
-    
+
   } catch (error) {
     console.error('Database initialization failed:', error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Database initialization failed',
       message: error.message,
       status: 'error'
@@ -301,6 +298,6 @@ app.get('/health', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Customer Portal Backend API running on port ${port}`);
-  console.log('⚠️  Performance issue: The /api/customers endpoint has an intentionally expensive query that will cause 10-30+ second latency');
-  console.log('📝 Note: Recent maintenance was performed on the database. Check maintenance_log table for details.');
+  //console.log('⚠️  Performance issue: The /api/customers endpoint has an intentionally expensive query that will cause 10-30+ second latency');
+  //console.log('📝 Note: Recent maintenance was performed on the database. Check maintenance_log table for details.');
 });

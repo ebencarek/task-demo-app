@@ -1,0 +1,70 @@
+# --- Dependencies ---
+node_modules/
+
+# --- Build outputs ---
+/dist/
+/build/
+/.parcel-cache/
+/.next/
+/out/
+
+# --- Logs & diagnostics ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Test / coverage ---
+/coverage/
+/.nyc_output/
+/junit.xml
+
+# --- Runtime data ---
+/tmp/
+/pids/
+*.pid
+*.seed
+*.pid.lock
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- OS / Editor junk ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.orig
+.idea/
+.vscode/
+.vscode-test/
+*.iml
+
+# --- TypeScript ---
+*.tsbuildinfo
+
+# --- Docker ---
+*.tar
+/local-cache/
+
+# --- Coverage tools ---
+.clover/
+
+# --- Misc ---
+*.tgz
+*.bak
+*.tmp
+
+# --- Ignore generated SQL/init data dumps (keep init.sql checked in) ---
+*.sql
+!init.sql
+
+# --- Lock files (keep – ensure consistency) ---
+# (Leave package-lock.json committed; do NOT ignore to maintain deterministic builds)
+
+# --- Optional local data directories ---
+/data/
