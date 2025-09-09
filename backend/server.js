@@ -92,6 +92,9 @@ app.get('/api/customers', async (req, res) => {
           category_total,
           RANK() OVER (PARTITION BY user_id ORDER BY category_total DESC) as category_rank
         FROM category_spending
+      ),
+      slow_query AS (
+        SELECT pg_sleep(2)
       )
       SELECT 
         cm.*,
@@ -104,7 +107,7 @@ app.get('/api/customers', async (req, res) => {
         rc1.category_total as top_category_spend,
         rc2.category as second_category,
         rc2.category_total as second_category_spend
-      FROM customer_metrics cm
+      FROM slow_query, customer_metrics cm
       LEFT JOIN review_metrics rm ON cm.id = rm.user_id
       LEFT JOIN purchase_frequency pf ON cm.id = pf.user_id
       LEFT JOIN ranked_categories rc1 ON cm.id = rc1.user_id AND rc1.category_rank = 1
