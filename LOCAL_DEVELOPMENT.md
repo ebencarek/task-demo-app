@@ -35,11 +35,10 @@ sudo nano /etc/postgresql/*/main/pg_hba.conf
 # Restart PostgreSQL to apply changes
 sudo systemctl restart postgresql
 
-# Create the database
-sudo -u postgres createdb customerdb
-
 # Test connection (you'll be prompted for password: postgres123)
-psql -U postgres -h localhost -d customerdb -c "SELECT version();"
+psql -U postgres -h localhost -d template1 -c "SELECT version();"
+
+# Press ':q' to exit the version info page
 ```
 
 ## Quick Start
@@ -49,9 +48,6 @@ psql -U postgres -h localhost -d customerdb -c "SELECT version();"
 First, set up a local PostgreSQL database:
 
 ```bash
-# Create database (assumes you have PostgreSQL running)
-createdb -U postgres customerdb
-
 # Option A: Fast setup (good performance)
 ./setup_db_migrations.sh fast
 

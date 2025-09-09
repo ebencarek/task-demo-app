@@ -23,15 +23,16 @@ run_migration() {
     fi
 }
 
-# Create database if it doesn't exist
-echo "Setting up database..."
-PGPASSWORD=$DB_PASSWORD createdb -h localhost -U $DB_USER $DB_NAME 2>/dev/null || echo "Database already exists"
+# Reset database - drop and recreate
+echo "Resetting database..."
+PGPASSWORD=$DB_PASSWORD dropdb -h localhost -U $DB_USER $DB_NAME 2>/dev/null || echo "Database doesn't exist"
+PGPASSWORD=$DB_PASSWORD createdb -h localhost -U $DB_USER $DB_NAME
 
 # Determine which migrations to run based on parameters
 case "${1:-full}" in
     "fast")
-        echo "Setting up database with good performance (migrations 1, 2, 4)..."
-        run_migration 1 && run_migration 2 && run_migration 4
+        echo "Setting up database with good performance (migrations 1, 2)..."
+        run_migration 1 && run_migration 2
         ;;
     "slow") 
         echo "Setting up database with poor performance (migrations 1, 2, 3)..."

@@ -43,27 +43,7 @@ This will:
 
 ### Local Development
 
-#### Backend API
-```bash
-cd backend
-npm install
-npm start
-# API runs on http://localhost:3001
-```
-
-#### Frontend
-```bash
-cd frontend  
-npm install
-npm start
-# Frontend runs on http://localhost:3000
-```
-
-#### Database (Local PostgreSQL)
-```bash
-# Start PostgreSQL locally
-psql -U postgres -d customerdb < init.sql
-```
+For detailed local development setup instructions, see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
 
 ## Container App Features
 
@@ -123,5 +103,10 @@ az group delete --name rg-demo-app-containerapp09051 --yes
 ├── deploy-container-apps.sh  # Deployment script
 ├── backend-containerapp.yaml # Backend Container App manifest
 ├── frontend-containerapp.yaml # Frontend Container App manifest
-└── init.sql                 # Database initialization
+├── migrations/              # Database migrations
+│   ├── 001_initial_schema.sql
+│   ├── 002_add_indexes.sql
+│   └── 003_temp_index_cleanup.sql
+├── setup_db_migrations.sh   # Database setup script
+└── LOCAL_DEVELOPMENT.md     # Local development guide
 ```

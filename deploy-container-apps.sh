@@ -78,11 +78,11 @@ POSTGRES_HOST=$(az postgres flexible-server show \
 
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
 
-# Initialize database with test data
-if [ -f "init.sql" ]; then
-  echo "💾 Initializing database with test data..."
-  PGPASSWORD=$DB_PASSWORD psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -c "\i init.sql" 2>/dev/null || {
-    echo "⚠️  Database initialization may require psql client. Data will be initialized during first app run."
+# Initialize database with test data using migrations
+if command -v psql &> /dev/null && [ -d "migrations" ]; then
+  echo "💾 Initializing database with migrations..."
+  ./run_azure_migrations.sh full "$POSTGRES_HOST" "$DB_USER" "$DB_PASSWORD" "$DB_NAME" || {
+    echo "⚠️  Database initialization failed. Data will be initialized during first app run."
   }
 fi
 
@@ -213,25 +213,6 @@ FRONTEND_URL=$(az containerapp show \
   --query properties.configuration.ingress.fqdn \
   --output tsv)
 
-# Initialize database if init.sql exists and database is accessible
-if [ -f "init.sql" ]; then
-  echo "💾 Attempting to initialize database from Container App..."
-  
-  # Create a temporary container to run the database initialization
-  az containerapp job create \
-    --name init-database-job \
-    --resource-group $RESOURCE_GROUP \
-    --environment $ENVIRONMENT_NAME \
-    --image postgres:15 \
-    --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME \
-    --env-vars PGPASSWORD=secretref:db-password \
-    --command "/bin/sh" \
-    --args "-c,echo 'Connecting to database...'; psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -c 'SELECT version();' && echo 'Database initialized successfully'" \
-    --cpu 0.25 --memory 0.5Gi \
-    --registry-server $ACR_LOGIN_SERVER \
-    --registry-username $ACR_USERNAME \
-    --registry-password $ACR_PASSWORD 2>/dev/null || echo "⚠️  Database job creation failed - will initialize on first API call"
-fi
 
 # Display summary
 echo ""

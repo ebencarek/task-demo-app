@@ -64,14 +64,8 @@ az postgres flexible-server firewall-rule create \
 echo "💾 Attempting to initialize database with sample data..."
 if command -v psql &> /dev/null; then
     echo "psql client found, initializing database..."
-    # Run database migrations  
-    for migration in migrations/*.sql; do
-        if [ -f "$migration" ]; then
-            echo "Running migration: $(basename $migration)"
-            PGPASSWORD="$DB_PASSWORD" psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -f "$migration"
-        fi
-    done
-    echo "✅ Database initialized successfully!"
+    # Run database migrations using the migration script
+    ./run_azure_migrations.sh full "$POSTGRES_HOST" "$DB_USER" "$DB_PASSWORD" "$DB_NAME"
 else
     echo "⚠️ psql client not found. Database will be initialized on first API call."
 fi
