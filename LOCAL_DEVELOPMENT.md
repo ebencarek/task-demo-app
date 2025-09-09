@@ -6,6 +6,42 @@
 - **PostgreSQL** - [Download here](https://www.postgresql.org/download/)
 - **Git** - [Download here](https://git-scm.com/)
 
+### PostgreSQL Setup (Ubuntu)
+
+If you don't have PostgreSQL installed:
+
+```bash
+# Update package list
+sudo apt update
+
+# Install PostgreSQL
+sudo apt install postgresql postgresql-contrib
+
+# Start PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Set password for postgres user
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres123';"
+
+# Configure authentication - edit pg_hba.conf
+sudo nano /etc/postgresql/*/main/pg_hba.conf
+
+# Find this line:
+# local   all             postgres                                peer
+# Change 'peer' to 'scram-sha-256':
+# local   all             postgres                                scram-sha-256
+
+# Restart PostgreSQL to apply changes
+sudo systemctl restart postgresql
+
+# Create the database
+sudo -u postgres createdb customerdb
+
+# Test connection (you'll be prompted for password: postgres123)
+psql -U postgres -h localhost -d customerdb -c "SELECT version();"
+```
+
 ## Quick Start
 
 ### 1. Database Setup
@@ -14,10 +50,16 @@ First, set up a local PostgreSQL database:
 
 ```bash
 # Create database (assumes you have PostgreSQL running)
-createdb customerdb
+createdb -U postgres customerdb
 
-# Initialize with test data
-psql -U postgres -d customerdb -f init.sql
+# Option A: Fast setup (good performance)
+./setup_db_migrations.sh fast
+
+# Option B: Slow setup (demonstrates performance issues)
+./setup_db_migrations.sh slow
+
+# Option C: Full setup (all migrations)
+./setup_db_migrations.sh
 ```
 
 **Alternative with Docker:**
@@ -25,8 +67,9 @@ psql -U postgres -d customerdb -f init.sql
 # Run PostgreSQL in Docker
 docker run --name postgres-local -e POSTGRES_PASSWORD=postgres123 -e POSTGRES_DB=customerdb -p 5432:5432 -d postgres:15
 
-# Wait for container to start, then initialize
-docker exec -i postgres-local psql -U postgres -d customerdb < init.sql
+# Wait for container to start, then run setup
+docker exec postgres-local createdb -U postgres customerdb
+./setup_db_migrations.sh slow  # or fast
 ```
 
 ### 2. Backend API Setup
@@ -171,7 +214,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./migrations:/docker-entrypoint-initdb.d/
 
   backend:
     build: ./backend

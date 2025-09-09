@@ -59,10 +59,6 @@ Thumbs.db
 *.bak
 *.tmp
 
-# --- Ignore generated SQL/init data dumps (keep init.sql checked in) ---
-*.sql
-!init.sql
-
 # --- Lock files (keep – ensure consistency) ---
 # (Leave package-lock.json committed; do NOT ignore to maintain deterministic builds)
 

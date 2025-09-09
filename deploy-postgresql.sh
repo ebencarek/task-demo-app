@@ -64,7 +64,13 @@ az postgres flexible-server firewall-rule create \
 echo "💾 Attempting to initialize database with sample data..."
 if command -v psql &> /dev/null; then
     echo "psql client found, initializing database..."
-    PGPASSWORD="$DB_PASSWORD" psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -f init.sql
+    # Run database migrations  
+    for migration in migrations/*.sql; do
+        if [ -f "$migration" ]; then
+            echo "Running migration: $(basename $migration)"
+            PGPASSWORD="$DB_PASSWORD" psql -h $POSTGRES_HOST -U $DB_USER -d $DB_NAME -f "$migration"
+        fi
+    done
     echo "✅ Database initialized successfully!"
 else
     echo "⚠️ psql client not found. Database will be initialized on first API call."
