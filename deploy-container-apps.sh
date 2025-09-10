@@ -230,7 +230,8 @@ if ! az containerapp env show --resource-group $RESOURCE_GROUP --name $ENVIRONME
       --name $ENVIRONMENT_NAME \
       --resource-group $RESOURCE_GROUP \
       --location $LOCATION \
-      --infrastructure-subnet-resource-id "$SUBNET_ID"
+      --infrastructure-subnet-resource-id $SUBNET_ID \
+      --logs-destination azure-monitor
 else
     echo "✅ Container App Environment $ENVIRONMENT_NAME already exists"
 fi
