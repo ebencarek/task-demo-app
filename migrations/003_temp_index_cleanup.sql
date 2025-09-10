@@ -2,12 +2,13 @@
 -- Migration: 003_temp_index_cleanup.sql
 -- Created: 2024-02-01
 
+\set ON_ERROR_STOP on
+
 -- Check if migration already applied
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = '003') THEN
-        RAISE NOTICE 'Migration 003 already applied, skipping...';
-        RETURN;
+        RAISE EXCEPTION 'MIGRATION_SKIP: Migration 003 already applied, skipping...';
     END IF;
     RAISE NOTICE 'Applying migration 003: Temporary index cleanup for table reorganization';
 END

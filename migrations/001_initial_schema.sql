@@ -3,6 +3,8 @@
 -- Created: 2024-01-15
 -- Purpose: Set up customer portal database with sample data
 
+\set ON_ERROR_STOP on
+
 -- Create migration tracking table first
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id SERIAL PRIMARY KEY,
@@ -16,8 +18,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = '001') THEN
-        RAISE NOTICE 'Migration 001 already applied, skipping...';
-        RETURN;
+        RAISE EXCEPTION 'MIGRATION_SKIP: Migration 001 already applied, skipping...';
     END IF;
     RAISE NOTICE 'Applying migration 001: Initial schema and sample data';
 END
@@ -63,17 +64,17 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 -- Insert sample data
-INSERT INTO users (name, email) 
-SELECT 
+INSERT INTO users (name, email)
+SELECT
     'Customer ' || i,
     'customer' || i || '@example.com'
 FROM generate_series(1, 50000) i;
 
 INSERT INTO products (name, price, category, description)
-SELECT 
+SELECT
     'Product ' || i,
     (random() * 500 + 10)::DECIMAL(10,2),
-    CASE (i % 10) 
+    CASE (i % 10)
         WHEN 0 THEN 'Electronics'
         WHEN 1 THEN 'Clothing'
         WHEN 2 THEN 'Home'
@@ -85,13 +86,13 @@ SELECT
         WHEN 8 THEN 'Garden'
         ELSE 'Office'
     END,
-    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' || 
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' ||
     'Description for product ' || i || '. ' ||
     'Features: ' || repeat('Feature ', (random() * 5)::int)
 FROM generate_series(1, 10000) i;
 
 INSERT INTO orders (user_id, order_date, status)
-SELECT 
+SELECT
     (random() * 49999 + 1)::INTEGER,
     CURRENT_TIMESTAMP - (random() * interval '730 days'),
     CASE (random() * 3)::INTEGER
@@ -103,7 +104,7 @@ SELECT
 FROM generate_series(1, 500000) i;
 
 INSERT INTO order_items (order_id, product_id, quantity, discount)
-SELECT 
+SELECT
     (random() * 499999 + 1)::INTEGER,
     (random() * 9999 + 1)::INTEGER,
     (random() * 10 + 1)::INTEGER,
@@ -111,11 +112,11 @@ SELECT
 FROM generate_series(1, 2000000) i;
 
 INSERT INTO reviews (user_id, product_id, rating, review_text)
-SELECT 
+SELECT
     (random() * 49999 + 1)::INTEGER,
     (random() * 9999 + 1)::INTEGER,
     (random() * 5 + 1)::INTEGER,
-    'Review text for item. ' || 
+    'Review text for item. ' ||
     CASE (random() * 5)::INTEGER
         WHEN 0 THEN 'Excellent product, highly recommend!'
         WHEN 1 THEN 'Good value for money.'
@@ -127,5 +128,5 @@ SELECT
 FROM generate_series(1, 300000) i;
 
 -- Record this migration as completed
-INSERT INTO schema_migrations (migration_id, migration_name) VALUES 
+INSERT INTO schema_migrations (migration_id, migration_name) VALUES
     ('001', 'Initial schema and sample data');

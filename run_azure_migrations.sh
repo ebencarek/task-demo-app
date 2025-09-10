@@ -35,6 +35,8 @@ run_migration() {
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
             echo "✅ Migration $migration_num completed successfully"
+        elif echo "$output" | grep -q "MIGRATION_SKIP:"; then
+            echo "⏭️  Migration $migration_num already applied, skipping..."
         else
             echo "❌ Migration $migration_num failed with exit code $exit_code"
             echo "Error output:"

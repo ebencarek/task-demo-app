@@ -34,12 +34,12 @@ function App() {
     setResult(null);
     setLastUpdateTime(new Date());
 
-    const startTime = Date.now();
-
     try {
       const response = await fetch(`${API_URL}/api/customers`);
       const data = await response.json();
-      const duration = Date.now() - startTime;
+      
+      // Parse query_time from API response (e.g., "123ms" -> 123)
+      const duration = data.query_time ? parseInt(data.query_time.replace('ms', '')) : 0;
 
       setResult({
         type: 'success',
@@ -47,11 +47,10 @@ function App() {
         duration
       });
     } catch (error) {
-      const duration = Date.now() - startTime;
       setResult({
         type: 'error',
         error: error.message,
-        duration
+        duration: 0
       });
     } finally {
       setLoading(false);

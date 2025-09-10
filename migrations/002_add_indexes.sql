@@ -3,12 +3,13 @@
 -- Created: 2024-01-20
 -- Purpose: Add critical indexes for query performance
 
+\set ON_ERROR_STOP on
+
 -- Check if migration already applied
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = '002') THEN
-        RAISE NOTICE 'Migration 002 already applied, skipping...';
-        RETURN;
+        RAISE EXCEPTION 'MIGRATION_SKIP: Migration 002 already applied, skipping...';
     END IF;
     RAISE NOTICE 'Applying migration 002: Add performance indexes';
 END

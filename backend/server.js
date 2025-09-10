@@ -30,7 +30,7 @@ app.get('/api/customers', async (req, res) => {
   try {
     // Test query designed to be very sensitive to missing indexes
     const result = await pool.query(`
-      SELECT 
+      SELECT
         o.id,
         u.name,
         u.email,
@@ -42,8 +42,7 @@ app.get('/api/customers', async (req, res) => {
       JOIN users u ON o.user_id = u.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN products p ON oi.product_id = p.id
-      WHERE o.order_date BETWEEN '2023-01-01' AND '2023-12-31'
-        AND u.email LIKE '%example.com'
+      WHERE u.email LIKE '%example.com'
         AND p.category IN ('Electronics', 'Clothing', 'Books')
       ORDER BY o.order_date DESC, p.price DESC
       LIMIT 50
