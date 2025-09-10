@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// Get API URL from runtime config (created by entrypoint.sh) or fallback to build-time env var or default
+const API_URL = (window.APP_CONFIG && window.APP_CONFIG.API_URL) || 
+                process.env.REACT_APP_API_URL || 
+                'http://localhost:3001';
 
 function App() {
   const [loading, setLoading] = useState(false);

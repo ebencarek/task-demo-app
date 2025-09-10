@@ -3,8 +3,7 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
-ARG BACKEND_URL=http://localhost:3001
-ENV REACT_APP_API_URL=$BACKEND_URL
+# REACT_APP_API_URL will be provided as environment variable at runtime
 
 # Copy package files
 COPY package*.json ./
@@ -30,6 +29,10 @@ COPY --from=build /app/build /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Expose port 80
 EXPOSE 80
 
@@ -37,5 +40,5 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost/ || exit 1
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Use entrypoint script to generate runtime config
+ENTRYPOINT ["/entrypoint.sh"]

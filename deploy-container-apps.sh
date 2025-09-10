@@ -50,9 +50,9 @@ else
 fi
 
 # Get ACR login server and credentials
-ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query loginServer --output tsv)
-ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv)
-ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query passwords[0].value --output tsv)
+ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query loginServer --output tsv | tr -d '\r\n' | xargs)
+ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv | tr -d '\r\n' | xargs)
+ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query passwords[0].value --output tsv | tr -d '\r\n' | xargs)
 
 echo "✅ ACR Login Server: $ACR_LOGIN_SERVER"
 
@@ -66,10 +66,7 @@ if ! az postgres flexible-server show --resource-group $RESOURCE_GROUP --name $P
       --location $LOCATION \
       --admin-user $DB_USER \
       --admin-password $DB_PASSWORD \
-      --sku-name Standard_B1ms \
-      --tier Burstable \
-      --storage-size 32 \
-      --version 15 \
+      --tier GeneralPurpose \
       --public-access 0.0.0.0-255.255.255.255 \
       --yes
 
@@ -80,6 +77,13 @@ if ! az postgres flexible-server show --resource-group $RESOURCE_GROUP --name $P
       --name $POSTGRES_SERVER \
       --query state \
       --output tsv
+
+    # Enable Query Store + Wait Sampling required for Query Performance Insight
+    echo "Configuring PostgreSQL server parameters for query analysis (Query Store + Wait Sampling + Enhanced Metrics)..."
+    az postgres flexible-server parameter set --resource-group $RESOURCE_GROUP --server-name $POSTGRES_SERVER --name pg_qs.query_capture_mode --value ALL --output none || echo "⚠️  Failed to set pg_qs.query_capture_mode"
+    az postgres flexible-server parameter set --resource-group $RESOURCE_GROUP --server-name $POSTGRES_SERVER --name pgms_wait_sampling.query_capture_mode --value ALL --output none || echo "⚠️  Failed to set pgms_wait_sampling.query_capture_mode"
+    az postgres flexible-server parameter set --resource-group $RESOURCE_GROUP --server-name $POSTGRES_SERVER --name metrics.collector_database_activity --value ON --output none || echo "⚠️  Failed to set metrics.collector_database_activity"
+    echo "✅ PostgreSQL server parameters configured"
 else
     echo "✅ PostgreSQL server $POSTGRES_SERVER already exists"
 fi
@@ -101,9 +105,60 @@ POSTGRES_HOST=$(az postgres flexible-server show \
   --resource-group $RESOURCE_GROUP \
   --name $POSTGRES_SERVER \
   --query fullyQualifiedDomainName \
-  --output tsv)
+  --output tsv | tr -d '\r\n' | xargs)
 
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
+
+# -----------------------------------------------------------------------------
+# Log Analytics (Diagnostic Settings) for Query Performance Insight
+# Categories needed: Sessions (PostgreSQLLogs), Query Store Runtime (PostgreSQLFlexQueryStoreRuntime),
+# Query Store Wait Statistics (PostgreSQLFlexQueryStoreWaitStats)
+# -----------------------------------------------------------------------------
+LOG_ANALYTICS_WS="law-demo-app-${SUFFIX}"
+echo "📊 Configuring Log Analytics workspace $LOG_ANALYTICS_WS for PostgreSQL diagnostics..."
+
+# Create workspace if it does not exist
+if ! az monitor log-analytics workspace show --resource-group $RESOURCE_GROUP --workspace-name $LOG_ANALYTICS_WS &>/dev/null; then
+    echo "Creating Log Analytics workspace $LOG_ANALYTICS_WS..."
+    az monitor log-analytics workspace create \
+      --resource-group $RESOURCE_GROUP \
+      --workspace-name $LOG_ANALYTICS_WS \
+      --location $LOCATION \
+      --output none
+else
+    echo "✅ Log Analytics workspace $LOG_ANALYTICS_WS already exists"
+fi
+
+WORKSPACE_ID=$(az monitor log-analytics workspace show \
+  --resource-group $RESOURCE_GROUP \
+  --workspace-name $LOG_ANALYTICS_WS \
+  --query id -o tsv | tr -d '\r\n' | xargs)
+
+POSTGRES_SERVER_ID=$(az postgres flexible-server show \
+  --resource-group $RESOURCE_GROUP \
+  --name $POSTGRES_SERVER \
+  --query id -o tsv | tr -d '\r\n' | xargs)
+
+# Check if a diagnostic setting already exists pointing to this workspace
+EXISTING_DIAG=$(az monitor diagnostic-settings list --resource $POSTGRES_SERVER_ID --query "[?workspaceId=='$WORKSPACE_ID'].name" -o tsv | head -n1)
+
+# Categories: PostgreSQLLogs (includes session connections/activity), Query Store runtime + wait stats
+LOG_CATEGORIES='[{"category":"PostgreSQLLogs","enabled":true},{"category":"PostgreSQLFlexQueryStoreRuntime","enabled":true},{"category":"PostgreSQLFlexQueryStoreWaitStats","enabled":true},{"category":"PostgreSQLFlexSessions","enabled":true}]'
+METRIC_CATEGORIES='[{"category":"AllMetrics","enabled":true}]'
+
+if [ -z "$EXISTING_DIAG" ]; then
+  echo "Creating diagnostic settings for PostgreSQL server (Sessions + Query Store categories)..."
+  az monitor diagnostic-settings create \
+    --name pg-flex-diag \
+    --resource $POSTGRES_SERVER_ID \
+    --workspace $WORKSPACE_ID \
+    --logs "$LOG_CATEGORIES" \
+    --metrics "$METRIC_CATEGORIES" \
+    --output none || echo "⚠️  Failed to create diagnostic settings"
+else
+  echo "✅ Diagnostic settings already configured: $EXISTING_DIAG"
+fi
+
 
 # Check if firewall rule for Azure services exists, create if not
 # echo "🔐 Checking firewall rule for Azure services..."
@@ -131,27 +186,56 @@ TRIES=0
 MAX_RETRIES=24   # ~2 minutes total if SLEEP=5
 SLEEP=5
 
-while [ $TRIES -lt $MAX_RETRIES ]; do
+while [ $TRIES -lt $MAX_RETRIES ] && [ $RESOLVED -eq 0 ]; do
+  TRIES=$((TRIES + 1))
+  echo "⏳ Attempting DNS resolution... ($TRIES/$MAX_RETRIES)"
+
+  # Try multiple DNS resolution methods
   if command -v getent >/dev/null 2>&1; then
-    if getent ahosts "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
-  elif command -v nslookup >/dev/null 2>&1; then
-    if nslookup "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
-  elif command -v host >/dev/null 2>&1; then
-    if host "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
-  else
-    # fallback to ping (may require ICMP and not always reliable)
-    if ping -c 1 -W 1 "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
+    if getent ahosts "$POSTGRES_HOST" >/dev/null 2>&1; then
+      RESOLVED=1
+      echo "✅ DNS resolution successful using getent"
+      break
+    fi
   fi
 
-  TRIES=$((TRIES + 1))
-  echo "⏳ DNS not yet resolvable. Retrying in ${SLEEP}s... ($TRIES/$MAX_RETRIES)"
-  sleep $SLEEP
+  if [ $RESOLVED -eq 0 ] && command -v nslookup >/dev/null 2>&1; then
+    if nslookup "$POSTGRES_HOST" >/dev/null 2>&1; then
+      RESOLVED=1
+      echo "✅ DNS resolution successful using nslookup"
+      break
+    fi
+  fi
+
+  if [ $RESOLVED -eq 0 ] && command -v host >/dev/null 2>&1; then
+    if host "$POSTGRES_HOST" >/dev/null 2>&1; then
+      RESOLVED=1
+      echo "✅ DNS resolution successful using host"
+      break
+    fi
+  fi
+
+  if [ $RESOLVED -eq 0 ] && command -v dig >/dev/null 2>&1; then
+    if dig "$POSTGRES_HOST" +short | grep -q .; then
+      RESOLVED=1
+      echo "✅ DNS resolution successful using dig"
+      break
+    fi
+  fi
+
+  # If still not resolved and not at max retries, wait and try again
+  if [ $RESOLVED -eq 0 ] && [ $TRIES -lt $MAX_RETRIES ]; then
+    echo "⏳ DNS not yet resolvable. Retrying in ${SLEEP}s..."
+    sleep $SLEEP
+  fi
 done
 
 if [ $RESOLVED -eq 1 ]; then
-  echo "✅ DNS resolution successful for $POSTGRES_HOST"
+  echo "✅ DNS resolution confirmed for $POSTGRES_HOST"
 else
-  echo "❌ Unable to resolve $POSTGRES_HOST after $((MAX_RETRIES * SLEEP)) seconds. Aborting."
+  echo "❌ Unable to resolve $POSTGRES_HOST after $((MAX_RETRIES * SLEEP)) seconds."
+  echo "❌ PostgreSQL host is not reachable. Deployment cannot continue."
+  echo "❌ Please check that the PostgreSQL server exists and DNS propagation is complete."
   exit 1
 fi
 
@@ -167,6 +251,12 @@ fi
 echo "🔨 Building and pushing backend image to ACR..."
 cd backend
 az acr build --registry $ACR_NAME --image customer-portal-backend:latest .
+cd ..
+
+# Build and push frontend image
+echo "🔨 Building and pushing frontend image to ACR..."
+cd frontend
+az acr build --registry $ACR_NAME --image customer-portal-frontend:latest .
 cd ..
 
 # Create VNet and subnets first
@@ -220,7 +310,7 @@ SUBNET_ID=$(az network vnet subnet show \
   --vnet-name vnet-containerapp \
   --name subnet-containerapp \
   --query id \
-  --output tsv)
+  --output tsv | tr -d '\r\n' | xargs)
 
 # Check if Container App Environment exists, create if not
 echo "🌐 Checking VNet-integrated Container App Environment..."
@@ -241,9 +331,9 @@ ENVIRONMENT_ID=$(az containerapp env show \
   --name $ENVIRONMENT_NAME \
   --resource-group $RESOURCE_GROUP \
   --query id \
-  --output tsv)
+  --output tsv | tr -d '\r\n' | xargs)
 
-# Check if backend container app exists, create if not
+# Check if backend container app exists, create or update
 echo "🔧 Checking backend Container App..."
 if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>/dev/null; then
     echo "Creating backend Container App..."
@@ -262,7 +352,13 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --cpu 0.25 --memory 0.5Gi \
       --min-replicas 1 --max-replicas 5
 else
-    echo "✅ Backend Container App backend-api already exists"
+    echo "✅ Backend Container App backend-api already exists, creating new revision..."
+    az containerapp update \
+      --name backend-api \
+      --resource-group $RESOURCE_GROUP \
+      --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
+      --set-env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432 \
+      --replace-secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME
 fi
 
 # Get backend URL
@@ -270,17 +366,11 @@ BACKEND_URL=$(az containerapp show \
   --name backend-api \
   --resource-group $RESOURCE_GROUP \
   --query properties.configuration.ingress.fqdn \
-  --output tsv)
+  --output tsv | tr -d '\r\n' | xargs)
 
 echo "✅ Backend API URL: https://$BACKEND_URL"
 
-# Build and push frontend image
-echo "🔨 Building and pushing frontend image to ACR..."
-cd frontend
-az acr build --registry $ACR_NAME --build-arg BACKEND_URL=https://${BACKEND_URL} --image customer-portal-frontend:latest .
-cd ..
-
-# Check if frontend container app exists, create if not
+# Check if frontend container app exists, create or update
 echo "🔧 Checking frontend Container App..."
 if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &>/dev/null; then
     echo "Creating frontend Container App..."
@@ -298,7 +388,12 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &
       --cpu 0.25 --memory 0.5Gi \
       --min-replicas 1 --max-replicas 3
 else
-    echo "✅ Frontend Container App frontend-web already exists"
+    echo "✅ Frontend Container App frontend-web already exists, creating new revision..."
+    az containerapp update \
+      --name frontend-web \
+      --resource-group $RESOURCE_GROUP \
+      --image $ACR_LOGIN_SERVER/customer-portal-frontend:latest \
+      --set-env-vars REACT_APP_API_URL=https://$BACKEND_URL
 fi
 
 # Get frontend URL
@@ -306,7 +401,7 @@ FRONTEND_URL=$(az containerapp show \
   --name frontend-web \
   --resource-group $RESOURCE_GROUP \
   --query properties.configuration.ingress.fqdn \
-  --output tsv)
+  --output tsv | tr -d '\r\n' | xargs)
 
 
 # Display summary
@@ -333,7 +428,6 @@ echo ""
 echo "⚠️  Performance Demo:"
 echo "   1. Open https://$FRONTEND_URL"
 echo "   2. Click 'View Customer Insights'"
-echo "   3. Query will take 10-30+ seconds due to missing indexes"
 echo ""
 echo "📝 Container App Commands:"
 echo "   az containerapp logs show --name backend-api --resource-group $RESOURCE_GROUP"
