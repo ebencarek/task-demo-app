@@ -3,6 +3,9 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+ARG BACKEND_URL=http://localhost:3001
+ENV REACT_APP_API_URL=$BACKEND_URL
+
 # Copy package files
 COPY package*.json ./
 

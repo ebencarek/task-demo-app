@@ -169,12 +169,6 @@ cd backend
 az acr build --registry $ACR_NAME --image customer-portal-backend:latest .
 cd ..
 
-# Build and push frontend image
-echo "🔨 Building and pushing frontend image to ACR..."
-cd frontend
-az acr build --registry $ACR_NAME --image customer-portal-frontend:latest .
-cd ..
-
 # Create VNet and subnets first
 echo "🌐 Checking Virtual Network infrastructure..."
 
@@ -278,6 +272,12 @@ BACKEND_URL=$(az containerapp show \
   --output tsv)
 
 echo "✅ Backend API URL: https://$BACKEND_URL"
+
+# Build and push frontend image
+echo "🔨 Building and pushing frontend image to ACR..."
+cd frontend
+az acr build --registry $ACR_NAME --build-arg BACKEND_URL=https://${BACKEND_URL} --image customer-portal-frontend:latest .
+cd ..
 
 # Check if frontend container app exists, create if not
 echo "🔧 Checking frontend Container App..."
