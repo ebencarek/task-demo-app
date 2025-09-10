@@ -370,12 +370,18 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --min-replicas 1 --max-replicas 5
 else
     echo "✅ Backend Container App backend-api already exists, creating new revision..."
+    # Update secrets first
+    az containerapp secret set \
+      --name backend-api \
+      --resource-group $RESOURCE_GROUP \
+      --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME
+    
+    # Then update the container app with new image and env vars
     az containerapp update \
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
       --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
-      --set-env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432 \
-      --replace-secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME
+      --set-env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432
 fi
 
 # Get backend URL
