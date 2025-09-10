@@ -247,15 +247,21 @@ if command -v psql &> /dev/null && [ -d "migrations" ]; then
   }
 fi
 
+# Create timestamp tag for unique image versions
+IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
+echo "📦 Using image tag: $IMAGE_TAG"
+
 # Build and push backend image
 echo "🔨 Building and pushing backend image to ACR..."
 cd backend
+az acr build --registry $ACR_NAME --image customer-portal-backend:$IMAGE_TAG .
 az acr build --registry $ACR_NAME --image customer-portal-backend:latest .
 cd ..
 
 # Build and push frontend image
 echo "🔨 Building and pushing frontend image to ACR..."
 cd frontend
+az acr build --registry $ACR_NAME --image customer-portal-frontend:$IMAGE_TAG .
 az acr build --registry $ACR_NAME --image customer-portal-frontend:latest .
 cd ..
 
@@ -358,7 +364,7 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
       --environment $ENVIRONMENT_NAME \
-      --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
+      --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
       --target-port 3001 \
       --ingress external \
       --registry-server $ACR_LOGIN_SERVER \
@@ -380,7 +386,7 @@ else
     az containerapp update \
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
-      --image $ACR_LOGIN_SERVER/customer-portal-backend:latest \
+      --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
       --set-env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432
 fi
 
@@ -401,7 +407,7 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
       --environment $ENVIRONMENT_NAME \
-      --image $ACR_LOGIN_SERVER/customer-portal-frontend:latest \
+      --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
       --target-port 80 \
       --ingress external \
       --registry-server $ACR_LOGIN_SERVER \
@@ -415,7 +421,7 @@ else
     az containerapp update \
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
-      --image $ACR_LOGIN_SERVER/customer-portal-frontend:latest \
+      --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
       --set-env-vars REACT_APP_API_URL=https://$BACKEND_URL
 fi
 
