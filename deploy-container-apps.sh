@@ -213,6 +213,7 @@ if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vn
       --vnet-name vnet-containerapp \
       --name subnet-containerapp \
       --address-prefix 10.0.2.0/23 \
+      --delegations Microsoft.App/environments \
       --output none
 else
     echo "✅ Container Apps subnet already exists"
