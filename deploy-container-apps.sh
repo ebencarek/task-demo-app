@@ -333,6 +333,23 @@ ENVIRONMENT_ID=$(az containerapp env show \
   --query id \
   --output tsv | tr -d '\r\n' | xargs)
 
+# Configure diagnostic settings for Container Apps environment
+echo "📊 Configuring diagnostic settings for Container Apps environment..."
+EXISTING_ACA_DIAG=$(az monitor diagnostic-settings list --resource $ENVIRONMENT_ID --query "[?workspaceId=='$WORKSPACE_ID'].name" -o tsv | head -n1 | tr -d '\r\n' | xargs)
+
+if [ -z "$EXISTING_ACA_DIAG" ]; then
+  echo "Creating diagnostic settings for Container Apps environment (Console Logs + System Logs + Metrics)..."
+  az monitor diagnostic-settings create \
+    --resource $ENVIRONMENT_ID \
+    --name "aca-env-diagnostics" \
+    --workspace $WORKSPACE_ID \
+    --logs '[{"category":"ContainerAppConsoleLogs","enabled":true},{"category":"ContainerAppSystemLogs","enabled":true}]' \
+    --metrics '[{"category":"AllMetrics","enabled":true}]' \
+    --output none || echo "⚠️  Failed to create ACA environment diagnostic settings"
+else
+  echo "✅ Diagnostic settings already exist for Container Apps environment: $EXISTING_ACA_DIAG"
+fi
+
 # Check if backend container app exists, create or update
 echo "🔧 Checking backend Container App..."
 if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>/dev/null; then
