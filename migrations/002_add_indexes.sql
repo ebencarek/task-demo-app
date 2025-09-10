@@ -3,6 +3,17 @@
 -- Created: 2024-01-20
 -- Purpose: Add critical indexes for query performance
 
+-- Check if migration already applied
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = '002') THEN
+        RAISE NOTICE 'Migration 002 already applied, skipping...';
+        RETURN;
+    END IF;
+    RAISE NOTICE 'Applying migration 002: Add performance indexes';
+END
+$$;
+
 -- Create indexes initially (like a properly configured database would have)
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
@@ -27,3 +38,8 @@ CREATE TABLE IF NOT EXISTS maintenance_log (
     performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     performed_by VARCHAR(50)
 );
+
+-- Record this migration as completed
+INSERT INTO schema_migrations (migration_id, migration_name) VALUES 
+    ('002', 'Add performance indexes');
+

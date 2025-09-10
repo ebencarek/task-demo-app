@@ -3,14 +3,34 @@
 -- Created: 2024-01-15
 -- Purpose: Set up customer portal database with sample data
 
-CREATE TABLE users (
+-- Create migration tracking table first
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id SERIAL PRIMARY KEY,
+    migration_id VARCHAR(50) UNIQUE NOT NULL,
+    migration_name VARCHAR(200) NOT NULL,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    applied_by VARCHAR(50) DEFAULT 'migration_script'
+);
+
+-- Check if migration already applied
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = '001') THEN
+        RAISE NOTICE 'Migration 001 already applied, skipping...';
+        RETURN;
+    END IF;
+    RAISE NOTICE 'Applying migration 001: Initial schema and sample data';
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100),
     email VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200),
     price DECIMAL(10,2),
@@ -18,14 +38,14 @@ CREATE TABLE products (
     description TEXT
 );
 
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
     order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(20)
 );
 
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(id),
     product_id INTEGER REFERENCES products(id),
@@ -33,7 +53,7 @@ CREATE TABLE order_items (
     discount DECIMAL(5,2)
 );
 
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
     product_id INTEGER REFERENCES products(id),
@@ -105,3 +125,7 @@ SELECT
         ELSE 'Would buy again!'
     END
 FROM generate_series(1, 300000) i;
+
+-- Record this migration as completed
+INSERT INTO schema_migrations (migration_id, migration_name) VALUES 
+    ('001', 'Initial schema and sample data');

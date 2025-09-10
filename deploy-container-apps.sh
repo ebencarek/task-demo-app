@@ -70,8 +70,6 @@ if ! az postgres flexible-server show --resource-group $RESOURCE_GROUP --name $P
       --tier Burstable \
       --storage-size 32 \
       --version 15 \
-      --subnet subnet-postgres \
-      --vnet vnet-containerapp \
       --public-access 0.0.0.0-255.255.255.255 \
       --yes
 
@@ -108,17 +106,53 @@ POSTGRES_HOST=$(az postgres flexible-server show \
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
 
 # Check if firewall rule for Azure services exists, create if not
-echo "🔐 Checking firewall rule for Azure services..."
-if ! az postgres flexible-server firewall-rule show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER --rule-name AllowAzureServices &>/dev/null; then
-    echo "Creating firewall rule for Azure services..."
-    az postgres flexible-server firewall-rule create \
-      --resource-group $RESOURCE_GROUP \
-      --name $POSTGRES_SERVER \
-      --rule-name AllowAzureServices \
-      --start-ip-address 0.0.0.0 \
-      --end-ip-address 0.0.0.0
+# echo "🔐 Checking firewall rule for Azure services..."
+# if ! az postgres flexible-server firewall-rule show --resource-group $RESOURCE_GROUP --name $POSTGRES_SERVER --rule-name AllowAzureServices &>/dev/null; then
+#     echo "Creating firewall rule for Azure services..."
+#     az postgres flexible-server firewall-rule create \
+#       --resource-group $RESOURCE_GROUP \
+#       --name $POSTGRES_SERVER \
+#       --rule-name AllowAzureServices \
+#       --start-ip-address 0.0.0.0 \
+#       --end-ip-address 0.0.0.0
+# else
+#     echo "✅ Firewall rule AllowAzureServices already exists"
+# fi
+
+# DNS check for PostgreSQL host before proceeding
+echo "🔎 Verifying DNS resolution for PostgreSQL host: $POSTGRES_HOST"
+if [ -z "$POSTGRES_HOST" ]; then
+  echo "❌ POSTGRES_HOST is empty. Aborting."
+  exit 1
+fi
+
+RESOLVED=0
+TRIES=0
+MAX_RETRIES=24   # ~2 minutes total if SLEEP=5
+SLEEP=5
+
+while [ $TRIES -lt $MAX_RETRIES ]; do
+  if command -v getent >/dev/null 2>&1; then
+    if getent ahosts "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
+  elif command -v nslookup >/dev/null 2>&1; then
+    if nslookup "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
+  elif command -v host >/dev/null 2>&1; then
+    if host "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
+  else
+    # fallback to ping (may require ICMP and not always reliable)
+    if ping -c 1 -W 1 "$POSTGRES_HOST" >/dev/null 2>&1; then RESOLVED=1; break; fi
+  fi
+
+  TRIES=$((TRIES + 1))
+  echo "⏳ DNS not yet resolvable. Retrying in ${SLEEP}s... ($TRIES/$MAX_RETRIES)"
+  sleep $SLEEP
+done
+
+if [ $RESOLVED -eq 1 ]; then
+  echo "✅ DNS resolution successful for $POSTGRES_HOST"
 else
-    echo "✅ Firewall rule AllowAzureServices already exists"
+  echo "❌ Unable to resolve $POSTGRES_HOST after $((MAX_RETRIES * SLEEP)) seconds. Aborting."
+  exit 1
 fi
 
 # Initialize database with test data using migrations
@@ -157,19 +191,19 @@ else
     echo "✅ Virtual Network vnet-containerapp already exists"
 fi
 
-# Check if PostgreSQL subnet exists, create if not
-if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vnet-containerapp --name subnet-postgres &>/dev/null; then
-    echo "Creating subnet for PostgreSQL..."
-    az network vnet subnet create \
-      --resource-group $RESOURCE_GROUP \
-      --vnet-name vnet-containerapp \
-      --name subnet-postgres \
-      --address-prefix 10.0.1.0/24 \
-      --delegations Microsoft.DBforPostgreSQL/flexibleServers \
-      --output none
-else
-    echo "✅ PostgreSQL subnet already exists"
-fi
+# # Check if PostgreSQL subnet exists, create if not
+# if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vnet-containerapp --name subnet-postgres &>/dev/null; then
+#     echo "Creating subnet for PostgreSQL..."
+#     az network vnet subnet create \
+#       --resource-group $RESOURCE_GROUP \
+#       --vnet-name vnet-containerapp \
+#       --name subnet-postgres \
+#       --address-prefix 10.0.1.0/24 \
+#       --delegations Microsoft.DBforPostgreSQL/flexibleServers \
+#       --output none
+# else
+#     echo "✅ PostgreSQL subnet already exists"
+# fi
 
 # Check if Container Apps subnet exists, create if not
 if ! az network vnet subnet show --resource-group $RESOURCE_GROUP --vnet-name vnet-containerapp --name subnet-containerapp &>/dev/null; then

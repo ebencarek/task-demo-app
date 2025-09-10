@@ -14,7 +14,7 @@ run_migration() {
     local migration_file="$MIGRATIONS_DIR/$(printf "%03d" $migration_num)_*.sql"
     
     if ls $migration_file 1> /dev/null 2>&1; then
-        echo "Applying migration $migration_num: $(basename $migration_file)..."
+        echo "📝 Running migration $migration_num: $(basename $migration_file)..."
         PGPASSWORD=$DB_PASSWORD psql -h localhost -U $DB_USER -d $DB_NAME -f $migration_file
         return $?
     else
