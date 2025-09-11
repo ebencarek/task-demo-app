@@ -108,6 +108,7 @@ POSTGRES_HOST=$(az postgres flexible-server show \
   --output tsv | tr -d '\r\n' | xargs)
 
 echo "✅ PostgreSQL Host: $POSTGRES_HOST"
+DB_CONNECTION_STRING="postgres://${DB_USER}:${DB_PASSWORD}@${POSTGRES_HOST}:5432/${DB_NAME}"
 
 # -----------------------------------------------------------------------------
 # Log Analytics (Diagnostic Settings) for Query Performance Insight
@@ -254,15 +255,13 @@ echo "📦 Using image tag: $IMAGE_TAG"
 # Build and push backend image
 echo "🔨 Building and pushing backend image to ACR..."
 cd backend
-az acr build --registry $ACR_NAME --image customer-portal-backend:$IMAGE_TAG .
-az acr build --registry $ACR_NAME --image customer-portal-backend:latest .
+az acr build --registry $ACR_NAME --image customer-portal-backend:$IMAGE_TAG --image customer-portal-backend:latest .
 cd ..
 
 # Build and push frontend image
 echo "🔨 Building and pushing frontend image to ACR..."
 cd frontend
-az acr build --registry $ACR_NAME --image customer-portal-frontend:$IMAGE_TAG .
-az acr build --registry $ACR_NAME --image customer-portal-frontend:latest .
+az acr build --registry $ACR_NAME --image customer-portal-frontend:$IMAGE_TAG --image customer-portal-frontend:latest .
 cd ..
 
 # Create VNet and subnets first
@@ -370,8 +369,8 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --registry-server $ACR_LOGIN_SERVER \
       --registry-username $ACR_USERNAME \
       --registry-password $ACR_PASSWORD \
-      --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME \
-      --env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432 \
+      --secrets db-connection-string=$DB_CONNECTION_STRING \
+      --env-vars DB_CONNECTION_STRING=secretref:db-connection-string \
       --cpu 0.25 --memory 0.5Gi \
       --min-replicas 1 --max-replicas 5
 else
@@ -380,14 +379,14 @@ else
     az containerapp secret set \
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
-      --secrets db-host=$POSTGRES_HOST db-user=$DB_USER db-password=$DB_PASSWORD db-name=$DB_NAME
+      --secrets db-connection-string=$DB_CONNECTION_STRING
     
     # Then update the container app with new image and env vars
     az containerapp update \
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
       --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
-      --set-env-vars DB_HOST=secretref:db-host DB_USER=secretref:db-user DB_PASSWORD=secretref:db-password DB_NAME=secretref:db-name DB_PORT=5432
+      --set-env-vars DB_CONNECTION_STRING=secretref:db-connection-string
 fi
 
 # Get backend URL
