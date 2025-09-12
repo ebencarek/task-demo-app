@@ -246,6 +246,8 @@ if command -v psql &> /dev/null && [ -d "migrations" ]; then
   ./run_azure_migrations.sh full "$POSTGRES_HOST" "$DB_USER" "$DB_PASSWORD" "$DB_NAME" || {
     echo "⚠️  Database initialization failed. Data will be initialized during first app run."
   }
+else
+  echo "⚠️  psql command not found or migrations directory missing. Skipping database initialization."
 fi
 
 # Create timestamp tag for unique image versions
@@ -380,7 +382,7 @@ else
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
       --secrets db-connection-string=$DB_CONNECTION_STRING
-    
+
     # Then update the container app with new image and env vars
     az containerapp update \
       --name backend-api \
