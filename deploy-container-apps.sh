@@ -1,14 +1,42 @@
 #!/bin/bash
 
 # Azure Container Apps deployment script
-# Usage: ./deploy-container-apps.sh [custom-suffix]
+# Usage: ./deploy-container-apps.sh [custom-suffix] [fast|full]
+#        ./deploy-container-apps.sh [fast|full]
+# If a provided argument matches fast|full it is treated as the migration mode.
+# Default migration mode: fast
 
-CUSTOM_SUFFIX="${1}"
+MIGRATION_MODE="fast"
+CUSTOM_SUFFIX=""
+
+is_mode() {
+  case "$1" in
+    fast|full) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Parse up to two positional arguments (suffix and/or mode)
+ARG1="${1}"
+ARG2="${2}"
+
+if [ -n "$ARG1" ]; then
+  if is_mode "$ARG1"; then
+    MIGRATION_MODE="$ARG1"
+  else
+    CUSTOM_SUFFIX="$ARG1"
+  fi
+fi
+
+if [ -n "$ARG2" ] && is_mode "$ARG2"; then
+  MIGRATION_MODE="$ARG2"
+fi
+
 if [ -n "$CUSTOM_SUFFIX" ]; then
-    # Strip hyphens from custom suffix
-    SUFFIX="${CUSTOM_SUFFIX//[-]/}"
+  # Strip hyphens from custom suffix
+  SUFFIX="${CUSTOM_SUFFIX//[-]/}"
 else
-    SUFFIX="containerapp$(date +%m%d)"
+  SUFFIX="containerapp$(date +%m%d)"
 fi
 
 # Resource names with suffix
@@ -26,6 +54,7 @@ echo "   Frontend: React + Nginx"
 echo "   Backend: Node.js Express API"
 echo "   Database: Azure PostgreSQL Flexible Server"
 echo "   Using suffix: $SUFFIX"
+echo "   Migration mode: $MIGRATION_MODE (fast runs subset, full runs all)"
 
 # Check if resource group exists, create if not
 echo "📦 Checking resource group..."
@@ -243,7 +272,7 @@ fi
 # Initialize database with test data using migrations
 if command -v psql &> /dev/null && [ -d "migrations" ]; then
   echo "💾 Initializing database with migrations..."
-  ./run_azure_migrations.sh full "$POSTGRES_HOST" "$DB_USER" "$DB_PASSWORD" "$DB_NAME" || {
+  ./run_azure_migrations.sh "$MIGRATION_MODE" "$POSTGRES_HOST" "$DB_USER" "$DB_PASSWORD" "$DB_NAME" || {
     echo "⚠️  Database initialization failed. Data will be initialized during first app run."
   }
 else
