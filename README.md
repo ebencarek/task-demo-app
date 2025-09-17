@@ -30,7 +30,7 @@ Run the deployment script:
 
 ```bash
 chmod +x deploy-container-apps.sh
-./deploy-container-apps.sh
+./deploy-container-apps.sh [custom_suffix]
 ```
 
 This will:
@@ -55,12 +55,27 @@ For detailed local development setup instructions, see [LOCAL_DEVELOPMENT.md](LO
 
 ## Performance Demo
 
-The application includes an intentionally slow database query to demonstrate performance monitoring:
+The application includes an intentionally slow database query to demonstrate performance monitoring. The initial deployment creates DB indexes to make the query perform faster:
 
 1. Access the frontend URL
-2. Click "View Customer Insights" 
-3. Query takes 10-30+ seconds due to missing database indexes
-4. This simulates a real-world performance issue
+2. Click "Analyze Customer Data"
+3. Query takes ~5 milliseconds
+
+Deploy a problematic DB migration that drops the indexes and impacts latency:
+
+```bash
+./deploy-container-apps.sh [custom_suffix] full
+```
+
+1. Click "Analyze Customer Data"
+2. Query takes >700 milliseconds
+
+Reset the DB to fast state:
+
+```bash
+chmod +x setup_db_migrations.sh
+./setup_db_migrations.sh azure [custom_suffix] fast
+```
 
 ## Monitoring
 
@@ -69,7 +84,7 @@ View Container App logs:
 # Backend logs
 az containerapp logs show --name backend-api --resource-group rg-demo-app-containerapp09051
 
-# Frontend logs  
+# Frontend logs
 az containerapp logs show --name frontend-web --resource-group rg-demo-app-containerapp09051
 
 # List revisions
