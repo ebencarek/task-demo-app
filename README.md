@@ -2,7 +2,7 @@
 
 This application has been restructured to use Azure Container Apps with a modern microservices architecture:
 
-- **Frontend**: React application served by Nginx
+- **Frontend**: React application served by a lightweight Node.js/Express server (acts as API gateway/proxy)
 - **Backend**: Node.js Express API
 - **Database**: Azure PostgreSQL Flexible Server
 
@@ -12,7 +12,7 @@ This application has been restructured to use Azure Container Apps with a modern
 ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
 │   Frontend          │    │   Backend           │    │   Azure PostgreSQL  │
 │   Container App     │◄──►│   Container App     │◄──►│   Flexible Server   │
-│   (React + Nginx)   │    │   (Node.js Express) │    │                     │
+│ (React + Express)   │◄──►│   (Node.js Express) │    │                     │
 └─────────────────────┘    └─────────────────────┘    └─────────────────────┘
 ```
 
@@ -101,15 +101,16 @@ az group delete --name rg-demo-app-containerapp09051 --yes
 ## Files Structure
 
 ```
-├── frontend/                 # React frontend
+├── frontend/                 # React frontend + Express proxy
 │   ├── src/
 │   │   ├── App.js           # Main React component
 │   │   ├── App.css          # Styles
 │   │   └── index.js         # Entry point
 │   ├── public/
 │   │   └── index.html       # HTML template
-│   ├── Dockerfile           # Frontend container
-│   ├── nginx.conf           # Nginx configuration
+│   ├── Dockerfile           # Frontend container (Node multi-stage build)
+│   ├── server.js            # Express server serving static build + proxy
+│   ├── nginx.conf           # (Deprecated) Old Nginx configuration
 │   └── package.json         # Frontend dependencies
 ├── backend/                  # Node.js backend
 │   ├── server.js            # Express API server

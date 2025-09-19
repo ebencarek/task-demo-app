@@ -19,22 +19,34 @@ services:
     networks:
       - app-network
 
-  webapp:
-    build: .
-    ports:
-      - "3000:3000"
+  backend:
+    build: ./backend
+    environment:
+      NODE_ENV: development
+      DB_CONNECTION_STRING: postgres://postgres:postgres123@postgres:5432/customerdb
+      PGSSLMODE: disable
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      NODE_ENV: development
-      DB_HOST: postgres  # Explicitly set the host to match the service name
-      DB_NAME: customerdb
-      DB_USER: postgres
-      DB_PASSWORD: postgres123
-    restart: unless-stopped
+    ports:
+      - "3001:3001"
     networks:
       - app-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      NODE_ENV: production
+      BACKEND_API_URL: http://backend:3001
+      PORT: 3000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    restart: unless-stopped
 
 networks:
   app-network:

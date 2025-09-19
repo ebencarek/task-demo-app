@@ -50,7 +50,7 @@ DB_PASSWORD="DemoPassword123!"
 ENVIRONMENT_NAME="env-demo-app-${SUFFIX}"
 
 echo "🚀 Deploying Customer Portal to Azure Container Apps..."
-echo "   Frontend: React + Nginx"
+echo "   Frontend: React + Express (serves static build + proxy)"
 echo "   Backend: Node.js Express API"
 echo "   Database: Azure PostgreSQL Flexible Server"
 echo "   Using suffix: $SUFFIX"
@@ -396,7 +396,7 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --environment $ENVIRONMENT_NAME \
       --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
       --target-port 3001 \
-      --ingress external \
+      --ingress internal \
       --registry-server $ACR_LOGIN_SERVER \
       --registry-username $ACR_USERNAME \
       --registry-password $ACR_PASSWORD \
@@ -418,6 +418,12 @@ else
       --resource-group $RESOURCE_GROUP \
       --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
       --set-env-vars DB_CONNECTION_STRING=secretref:db-connection-string
+
+    az containerapp ingress update \
+      --name backend-api \
+      --resource-group $RESOURCE_GROUP \
+      --type internal \
+      --target-port 3001
 fi
 
 # Get backend URL
@@ -438,12 +444,12 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &
       --resource-group $RESOURCE_GROUP \
       --environment $ENVIRONMENT_NAME \
       --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
-      --target-port 80 \
+      --target-port 3000 \
       --ingress external \
       --registry-server $ACR_LOGIN_SERVER \
       --registry-username $ACR_USERNAME \
       --registry-password $ACR_PASSWORD \
-      --env-vars REACT_APP_API_URL=https://$BACKEND_URL \
+      --env-vars BACKEND_API_URL=https://$BACKEND_URL \
       --cpu 0.25 --memory 0.5Gi \
       --min-replicas 1 --max-replicas 3
 else
@@ -452,7 +458,12 @@ else
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
       --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
-      --set-env-vars REACT_APP_API_URL=https://$BACKEND_URL
+      --set-env-vars BACKEND_API_URL=https://$BACKEND_URL
+    az containerapp ingress update \
+      --name frontend-web \
+      --resource-group $RESOURCE_GROUP \
+      --type external \
+      --target-port 3000
 fi
 
 # Get frontend URL
@@ -480,7 +491,7 @@ echo "   Database: $DB_NAME"
 echo "   User: $DB_USER"
 echo ""
 echo "📊 Architecture:"
-echo "   ├── Frontend Container App (React + Nginx)"
+echo "   ├── Frontend Container App (React + Express)"
 echo "   ├── Backend Container App (Node.js Express)"
 echo "   └── Azure PostgreSQL Flexible Server"
 echo ""

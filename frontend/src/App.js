@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-
-// Get API URL from runtime config (created by entrypoint.sh) or fallback to build-time env var or default
-const API_URL = (window.APP_CONFIG && window.APP_CONFIG.API_URL) || 
-                process.env.REACT_APP_API_URL || 
-                'http://localhost:3001';
+// All requests use relative paths so they are sent to the same origin (frontend proxy)
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -16,7 +12,7 @@ function App() {
   useEffect(() => {
     const checkHealthStatus = async () => {
       try {
-        const response = await fetch(`${API_URL}/health`);
+  const response = await fetch('/health');
         const data = await response.json();
         setHealthStatus(data);
       } catch (error) {
@@ -35,9 +31,9 @@ function App() {
     setLastUpdateTime(new Date());
 
     try {
-      const response = await fetch(`${API_URL}/api/customers`);
+  const response = await fetch('/api/customers');
       const data = await response.json();
-      
+
       // Parse query_time from API response (e.g., "123ms" -> 123)
       const duration = data.query_time ? parseInt(data.query_time.replace('ms', '')) : 0;
 
@@ -62,7 +58,7 @@ function App() {
     setLastUpdateTime(new Date());
 
     try {
-      const response = await fetch(`${API_URL}/health`);
+  const response = await fetch('/health');
       const data = await response.json();
       setHealthStatus(data);
     } catch (error) {

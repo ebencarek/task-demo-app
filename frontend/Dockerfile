@@ -1,44 +1,30 @@
-# Build stage
+# Multi-stage build: build React then run with Node/Express
 FROM node:18-alpine as build
-
 WORKDIR /app
-
-# REACT_APP_API_URL will be provided as environment variable at runtime
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
-
-# Copy source code
 COPY . .
-
-# Build the app
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+FROM node:18-alpine
+WORKDIR /app
+ENV NODE_ENV=production
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Copy build output from first stage
+COPY --from=build /app/build ./build
 
-# Copy build files to nginx
-COPY --from=build /app/build /usr/share/nginx/html
+# Production deps only (react build already compiled)
+COPY package*.json ./
+RUN npm install --only=production
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy only server source (no need for entire src except server.js)
+COPY src/server.js ./src/server.js
 
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Expose frontend port
+EXPOSE 3000
 
-# Expose port 80
-EXPOSE 80
+ENV PORT=3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost/ || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget -qO- http://localhost:3000/health || exit 1
 
-# Use entrypoint script to generate runtime config
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["npm", "run", "serve"]
