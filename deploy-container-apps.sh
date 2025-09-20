@@ -1,13 +1,19 @@
 #!/bin/bash
 
 # Azure Container Apps deployment script
-# Usage: ./deploy-container-apps.sh [custom-suffix] [fast|full]
-#        ./deploy-container-apps.sh [fast|full]
+
+# Usage:
+#   ./deploy-container-apps.sh [custom-suffix] [fast|full] [--no-build]
+#   ./deploy-container-apps.sh [fast|full] [--no-build]
+#   ./deploy-container-apps.sh [--no-build]
 # If a provided argument matches fast|full it is treated as the migration mode.
+# If --no-build is present, skips building/pushing container images and uses latest images in ACR.
 # Default migration mode: fast
+
 
 MIGRATION_MODE="fast"
 CUSTOM_SUFFIX=""
+NO_BUILD=0
 
 is_mode() {
   case "$1" in
@@ -16,21 +22,24 @@ is_mode() {
   esac
 }
 
-# Parse up to two positional arguments (suffix and/or mode)
-ARG1="${1}"
-ARG2="${2}"
 
-if [ -n "$ARG1" ]; then
-  if is_mode "$ARG1"; then
-    MIGRATION_MODE="$ARG1"
-  else
-    CUSTOM_SUFFIX="$ARG1"
-  fi
-fi
-
-if [ -n "$ARG2" ] && is_mode "$ARG2"; then
-  MIGRATION_MODE="$ARG2"
-fi
+# Parse up to three positional arguments (suffix, mode, --no-build)
+for arg in "$@"; do
+  case "$arg" in
+    --no-build)
+      NO_BUILD=1
+      ;;
+    fast|full)
+      MIGRATION_MODE="$arg"
+      ;;
+    *)
+      # Only set custom suffix if not already set and not a flag
+      if [ -z "$CUSTOM_SUFFIX" ] && [[ ! "$arg" =~ ^- ]]; then
+        CUSTOM_SUFFIX="$arg"
+      fi
+      ;;
+  esac
+done
 
 if [ -n "$CUSTOM_SUFFIX" ]; then
   # Strip hyphens from custom suffix
@@ -279,21 +288,61 @@ else
   echo "⚠️  psql command not found or migrations directory missing. Skipping database initialization."
 fi
 
-# Create timestamp tag for unique image versions
-IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
-echo "📦 Using image tag: $IMAGE_TAG"
+# Create timestamp tag for unique image versions (unless using --no-build)
+IMAGE_TAG=""
+if [ "$NO_BUILD" -eq 0 ]; then
+  IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
+  echo "📦 Using new image tag: $IMAGE_TAG"
+else
+  echo "📦 --no-build specified: attempting to reuse currently deployed images"
+fi
 
-# Build and push backend image
-echo "🔨 Building and pushing backend image to ACR..."
-cd backend
-az acr build --registry $ACR_NAME --image customer-portal-backend:$IMAGE_TAG --image customer-portal-backend:latest .
-cd ..
 
-# Build and push frontend image
-echo "🔨 Building and pushing frontend image to ACR..."
-cd frontend
-az acr build --registry $ACR_NAME --image customer-portal-frontend:$IMAGE_TAG --image customer-portal-frontend:latest .
-cd ..
+# Build and push images unless --no-build is set
+if [ "$NO_BUILD" -eq 0 ]; then
+  echo "🔨 Building and pushing backend image to ACR..."
+  cd backend
+  az acr build --registry $ACR_NAME --image customer-portal-backend:$IMAGE_TAG --image customer-portal-backend:latest .
+  cd ..
+
+  echo "🔨 Building and pushing frontend image to ACR..."
+  cd frontend
+  az acr build --registry $ACR_NAME --image customer-portal-frontend:$IMAGE_TAG --image customer-portal-frontend:latest .
+  cd ..
+
+  BACKEND_IMAGE_REF="$ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG"
+  FRONTEND_IMAGE_REF="$ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG"
+else
+  echo "⚡ Skipping build. Resolving currently deployed images (if apps exist)..."
+  # Try to retrieve existing images; if not found fallback to 'latest'
+  BACKEND_IMAGE_REF=$(az containerapp show --name backend-api --resource-group $RESOURCE_GROUP --query properties.template.containers[0].image -o tsv 2>/dev/null | tr -d '\r\n' | xargs)
+  FRONTEND_IMAGE_REF=$(az containerapp show --name frontend-web --resource-group $RESOURCE_GROUP --query properties.template.containers[0].image -o tsv 2>/dev/null | tr -d '\r\n' | xargs)
+
+  if [ -z "$BACKEND_IMAGE_REF" ]; then
+    BACKEND_IMAGE_REF="$ACR_LOGIN_SERVER/customer-portal-backend:latest"
+    echo "⚠️  Existing backend container app not found or no image reference; attempting fallback $BACKEND_IMAGE_REF"
+    # Validate fallback exists
+    BACKEND_TAG_EXISTS=$(az acr repository show-tags --name $ACR_NAME --repository customer-portal-backend --query "[?@=='latest']|length(@)" -o tsv 2>/dev/null || echo 0)
+    if [ "$BACKEND_TAG_EXISTS" != "1" ]; then
+      echo "❌ Fallback backend image customer-portal-backend:latest not found in ACR $ACR_NAME. Aborting (--no-build requires existing images)." >&2
+      exit 1
+    fi
+  else
+    echo "✅ Reusing backend image: $BACKEND_IMAGE_REF"
+  fi
+
+  if [ -z "$FRONTEND_IMAGE_REF" ]; then
+    FRONTEND_IMAGE_REF="$ACR_LOGIN_SERVER/customer-portal-frontend:latest"
+    echo "⚠️  Existing frontend container app not found or no image reference; attempting fallback $FRONTEND_IMAGE_REF"
+    FRONTEND_TAG_EXISTS=$(az acr repository show-tags --name $ACR_NAME --repository customer-portal-frontend --query "[?@=='latest']|length(@)" -o tsv 2>/dev/null || echo 0)
+    if [ "$FRONTEND_TAG_EXISTS" != "1" ]; then
+      echo "❌ Fallback frontend image customer-portal-frontend:latest not found in ACR $ACR_NAME. Aborting (--no-build requires existing images)." >&2
+      exit 1
+    fi
+  else
+    echo "✅ Reusing frontend image: $FRONTEND_IMAGE_REF"
+  fi
+fi
 
 # Create VNet and subnets first
 echo "🌐 Checking Virtual Network infrastructure..."
@@ -394,7 +443,7 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name backend-api &>
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
       --environment $ENVIRONMENT_NAME \
-      --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
+  --image ${BACKEND_IMAGE_REF} \
       --target-port 3001 \
       --ingress internal \
       --registry-server $ACR_LOGIN_SERVER \
@@ -416,8 +465,8 @@ else
     az containerapp update \
       --name backend-api \
       --resource-group $RESOURCE_GROUP \
-      --image $ACR_LOGIN_SERVER/customer-portal-backend:$IMAGE_TAG \
-      --set-env-vars DB_CONNECTION_STRING=secretref:db-connection-string
+      --image ${BACKEND_IMAGE_REF} \
+      --replace-env-vars DB_CONNECTION_STRING=secretref:db-connection-string
 
     az containerapp ingress update \
       --name backend-api \
@@ -443,7 +492,7 @@ if ! az containerapp show --resource-group $RESOURCE_GROUP --name frontend-web &
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
       --environment $ENVIRONMENT_NAME \
-      --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
+  --image ${FRONTEND_IMAGE_REF} \
       --target-port 3000 \
       --ingress external \
       --registry-server $ACR_LOGIN_SERVER \
@@ -457,8 +506,8 @@ else
     az containerapp update \
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
-      --image $ACR_LOGIN_SERVER/customer-portal-frontend:$IMAGE_TAG \
-      --set-env-vars BACKEND_API_URL=https://$BACKEND_URL
+      --image ${FRONTEND_IMAGE_REF} \
+      --replace-env-vars BACKEND_API_URL=https://$BACKEND_URL
     az containerapp ingress update \
       --name frontend-web \
       --resource-group $RESOURCE_GROUP \
