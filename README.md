@@ -61,6 +61,18 @@ The application includes an intentionally slow database query to demonstrate per
 2. Click "Analyze Customer Data"
 3. Query takes ~5 milliseconds
 
+Deploy the base setup:
+
+```bash
+./deploy-container-apps.sh [custom_suffix]
+```
+
+Start simulating customer traffic, let it run for a little bit:
+
+```bash
+./simulate_customer_traffic.sh [fqdn of frontend webapp]
+```
+
 Deploy a problematic DB migration that drops the indexes and impacts latency:
 
 ```bash
@@ -69,6 +81,7 @@ Deploy a problematic DB migration that drops the indexes and impacts latency:
 
 1. Click "Analyze Customer Data"
 2. Query takes >700 milliseconds
+3. Tell agent to analyze issues.
 
 Reset the DB to fast state:
 
